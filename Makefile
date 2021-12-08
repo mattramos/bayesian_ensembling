@@ -1,6 +1,6 @@
 make clean:
-	black py38 -l 100 src/
-	isort --atomic -l 100 --trailing-comma --remove-redundant-aliases --multi-line 3 src/
+	black -l 100 ensembles/
+	isort --atomic -l 100 --trailing-comma --remove-redundant-aliases --multi-line 3 ensembles/
 
 make notebooks:
 	jupytext --to notebook nbs/*.py

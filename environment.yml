@@ -43,6 +43,7 @@ dependencies:
     - grpcio==1.42.0
     - h5py==3.6.0
     - importlib-metadata==4.8.2
+    - isort==5.10.1
     - jupytext==1.13.3
     - keras==2.7.0
     - keras-preprocessing==1.1.2

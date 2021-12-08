@@ -30,18 +30,12 @@ class Model:
         )
         self._fit(X_transformed, y_transformed, params)
 
-    def predict(
-        self, X: Matrix, params: dict
-    ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
+    def predict(self, X: Matrix, params: dict) -> tp.Tuple[tf.Tensor, tf.Tensor]:
         X_transformed = self.transform_X(X, training=False)
-        tf.debugging.assert_shapes(
-            [(X, ("N", "D")), (X_transformed, ("N", "K"))]
-        )
+        tf.debugging.assert_shapes([(X, ("N", "D")), (X_transformed, ("N", "K"))])
         mu, sigma2 = self._predict(X, params)
         mu, sigma2 = self.untransform_outputs(mu, sigma2)
-        tf.debugging.assert_shapes(
-            [(X, ("N", "D")), (mu, ("N", "K")), (sigma2, ("N", "K"))]
-        )
+        tf.debugging.assert_shapes([(X, ("N", "D")), (mu, ("N", "K")), (sigma2, ("N", "K"))])
         return mu, sigma2
 
     def transform_X(self, X: Matrix, training: bool = True):
@@ -66,12 +60,8 @@ class GPFlowModel(Model):
         self.kernel = kernel
         self.model: GPModel = None
 
-    def _predict(
-        self, X: Matrix, params: dict
-    ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
-        tf_data = tf.data.Dataset.from_tensor_slices(X).batch(
-            params["batch_size"]
-        )
+    def _predict(self, X: Matrix, params: dict) -> tp.Tuple[tf.Tensor, tf.Tensor]:
+        tf_data = tf.data.Dataset.from_tensor_slices(X).batch(params["batch_size"])
 
         @tf.function
         def pred(batch):

@@ -2,7 +2,7 @@
 
 General structure is as follows:
 
-- Source code is found in `src/`
+- Source code is found in `ensembles/`
 - Tutorial notebooks for using the code can be found in `nbs/`
 - Experimental files in `experiments/`
 - Unit test files in `tests/`
