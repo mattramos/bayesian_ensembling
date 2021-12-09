@@ -62,6 +62,10 @@ class Model:
     def _fit(self, X: Matrix, y: ColumnVector, params: dict) -> None:
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def _predict(self, X: Matrix, params: dict) -> None:
+        raise NotImplementedError
+
 
 class GPFlowModel(Model):
     def __init__(self, kernel: Kernel, name: str = "GPFlow Model") -> None:
