@@ -3,11 +3,14 @@ import typing as tp
 
 import gpflow
 import tensorflow as tf
+from gpflow import inducing_variables
+from gpflow.inducing_variables import InducingPoints
 from gpflow.kernels import Kernel
-from gpflow.models import GPR
+from gpflow.models import GPR, SGPR
 from gpflow.models.model import GPModel
 from gpflow.optimizers import Scipy
-from tqdm import tqdm
+from scipy.cluster.vq import kmeans2
+from tqdm import tqdm, trange
 
 from .array_types import ColumnVector, Matrix
 
@@ -30,12 +33,18 @@ class Model:
         )
         self._fit(X_transformed, y_transformed, params)
 
-    def predict(self, X: Matrix, params: dict) -> tp.Tuple[tf.Tensor, tf.Tensor]:
+    def predict(
+        self, X: Matrix, params: dict
+    ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
         X_transformed = self.transform_X(X, training=False)
-        tf.debugging.assert_shapes([(X, ("N", "D")), (X_transformed, ("N", "K"))])
+        tf.debugging.assert_shapes(
+            [(X, ("N", "D")), (X_transformed, ("N", "K"))]
+        )
         mu, sigma2 = self._predict(X, params)
         mu, sigma2 = self.untransform_outputs(mu, sigma2)
-        tf.debugging.assert_shapes([(X, ("N", "D")), (mu, ("N", "K")), (sigma2, ("N", "K"))])
+        tf.debugging.assert_shapes(
+            [(X, ("N", "D")), (mu, ("N", "K")), (sigma2, ("N", "K"))]
+        )
         return mu, sigma2
 
     def transform_X(self, X: Matrix, training: bool = True):
@@ -60,8 +69,12 @@ class GPFlowModel(Model):
         self.kernel = kernel
         self.model: GPModel = None
 
-    def _predict(self, X: Matrix, params: dict) -> tp.Tuple[tf.Tensor, tf.Tensor]:
-        tf_data = tf.data.Dataset.from_tensor_slices(X).batch(params["batch_size"])
+    def _predict(
+        self, X: Matrix, params: dict
+    ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
+        tf_data = tf.data.Dataset.from_tensor_slices(X).batch(
+            params["batch_size"]
+        )
 
         @tf.function
         def pred(batch):
@@ -100,5 +113,39 @@ class ConjugateGP(GPFlowModel):
         )
 
 
-class StochasticGP(GPFlowModel):
-    pass
+class SparseGP(GPFlowModel):
+    def __init__(self, kernel: Kernel, name: str = "Sparse GPR") -> None:
+        super().__init__(kernel, name=name)
+        self.Z = None
+        self.elbos = []
+
+    def _fit(self, X: Matrix, y: ColumnVector, params: dict) -> None:
+        # Define model
+        Z = self._constuct_inducing_locs(X, params["n_inducing"])
+        self.Z = Z
+        self.model = SGPR((X, y), kernel=self.kernel, inducing_variable=Z)
+
+        # Define optimiser
+        opt = tf.optimizers.Adam(learning_rate=params["learning_rate"])
+
+        # Compile loss fn.
+        @tf.function
+        def step():
+            opt.minimize(
+                self.model.training_loss, self.model.trainable_variables
+            )
+
+        # Run optimisation
+        tr = trange(params["optim_nits"])
+        for nit in tr:
+            step()
+            if nit % params["log_interval"] == 0:
+                elbo = -self.model.training_loss().numpy()
+                self.elbos.append(elbo)
+                tr.set_postfix({"ELBO": elbo})
+
+    def _constuct_inducing_locs(
+        self, X: Matrix, n_inducing: int
+    ) -> InducingPoints:
+        Z = kmeans2(data=X, k=n_inducing, minit="points")[0]
+        return InducingPoints(Z)
