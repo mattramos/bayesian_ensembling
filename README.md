@@ -1,5 +1,7 @@
 # Codebase for Bayesian Ensembling Project
 
+[![codecov](https://codecov.io/gh/thomaspinder/bayesian_ensembling/branch/master/graph/badge.svg?token=0UOAPN98TV)](https://codecov.io/gh/thomaspinder/bayesian_ensembling)
+
 General structure is as follows:
 
 - Source code is found in `ensembles/`

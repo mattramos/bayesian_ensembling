@@ -1,10 +1,10 @@
 coverage:
-  range: 70..90
+  range: 50..70
   status:
     project:
       default:
         target: auto
-        threshold: 5%
+        threshold: 10%
 
 fixes:
   - "/home/runner/work/bayesian_ensembles/ensembles/::" # Correct paths
@@ -12,4 +12,6 @@ fixes:
 ignore:
   - "setup.py"
   - "*/tests/.*"
+  - tests/
   - "__init__.py"
+  - "*tests*

@@ -52,14 +52,15 @@ idx = np.arange(mus.shape[0])
 
 fig, ax = plt.subplots(figsize=(30, 6))
 for v in value_matrix.T:
-    ax.plot(idx, v, color ='tab:blue', alpha=0.05)
+    ax.plot(idx, v, color ='tab:blue', alpha=0.1)
 
-ax.plot(idx, mus, color='tab:orange')
-ax.fill_between(idx, mus - sigma, mus + sigma, alpha=0.3, color='tab:orange', label=r'$1\sigma$')
+# ax.plot(idx, mus, color='tab:orange')
+# ax.fill_between(idx, mus - sigma, mus + sigma, alpha=0.3, color='tab:orange', label=r'$1\sigma$')
 
 ax.spines['top'].set_visible(False)
 ax.spines['right'].set_visible(False)
-ax.set_xlim(0, 5000)
+ax.set_xlim(0, 1000)
+ax.set(xlabel = 'Time index', ylabel='Temperature')
 plt.show()
 
 # %% [markdown]
