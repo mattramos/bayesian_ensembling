@@ -9,6 +9,7 @@ import pytest
         ensembles.config.Parameters,
         ensembles.config.GPRParameters,
         ensembles.config.SGPRParameters,
+        ensembles.config.ReconstructionParameters,
     ],
 )
 def test_config(parameter_set: ensembles.config.Parameters):

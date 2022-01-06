@@ -2,6 +2,8 @@ import abc
 import typing as tp
 
 import gpflow
+from numpy.core.arrayprint import _leading_trailing
+from numpy.core.fromnumeric import var
 import tensorflow as tf
 from gpflow import inducing_variables
 from gpflow.inducing_variables import InducingPoints
@@ -10,9 +12,11 @@ from gpflow.models import GPR, SGPR
 from gpflow.models.model import GPModel
 from gpflow.optimizers import Scipy
 from scipy.cluster.vq import kmeans2
+from tensorflow.python.ops.gen_math_ops import Mod
+import tensorflow_probability as tfp
 from tqdm import tqdm, trange
 
-from .array_types import ColumnVector, Matrix
+from .array_types import ColumnVector, Matrix, Vector
 
 
 class Model:
@@ -153,3 +157,55 @@ class SparseGP(GPFlowModel):
     ) -> InducingPoints:
         Z = kmeans2(data=X, k=n_inducing, minit="points")[0]
         return InducingPoints(Z)
+
+
+class JointReconstruction(tf.Module):
+    def __init__(
+        self, means: Vector, variances: Vector, name="JointReconstruction"
+    ):
+        super().__init__(name=name)
+        self.mu, self.sigma_hat = self._build_parameters(means, variances)
+
+    def fit(self, samples: tf.Tensor, params: dict) -> None:
+        opt = tf.optimizers.Adam(learning_rate=params["learning_rate"])
+        objective = self._objective_fn()
+
+        for _ in trange(params["optim_nits"]):
+            with tf.GradientTape() as tape:
+                tape.watch(self.trainable_variables)
+                loss = objective(samples)
+            grads = tape.gradient(loss, self.trainable_variables)
+            opt.apply_gradients(zip(grads, self.trainable_variables))
+
+    def return_parameters(self) -> tp.Tuple[tf.Tensor, tf.Tensor]:
+        return tf.convert_to_tensor(self.mu), tf.convert_to_tensor(
+            self.sigma_hat
+        )
+
+    def _objective_fn(self):
+        dist = tfp.distributions.MultivariateNormalTriL(self.mu, self.sigma_hat)
+
+        def log_likelihood(x: tf.Tensor) -> tf.Tensor:
+            return -tf.reduce_sum(dist.log_prob(x))
+
+        return log_likelihood
+
+    @staticmethod
+    def _build_parameters(
+        means, variances
+    ) -> tp.Tuple[tfp.util.TransformedVariable, tfp.util.TransformedVariable]:
+        mu = tfp.util.TransformedVariable(
+            initial_value=tf.cast(means, dtype=tf.float64),
+            bijector=tfp.bijectors.Identity(),
+            dtype=tf.float64,
+            trainable=False,
+        )
+        sigma_hat = tfp.util.TransformedVariable(
+            initial_value=tf.cast(
+                tf.eye(num_rows=means.shape[0]) * variances, dtype=tf.float64
+            ),
+            bijector=tfp.bijectors.FillTriangular(),
+            dtype=tf.float64,
+            trainable=True,
+        )
+        return mu, sigma_hat

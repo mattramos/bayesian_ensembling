@@ -22,3 +22,9 @@ class SGPRParameters(Parameters):
     log_interval: int = 20
     n_inducing: int = 50
     learning_rate: float = 0.01
+
+
+@dataclass(repr=False)
+class ReconstructionParameters(Parameters):
+    learning_rate: float = 0.01
+    optim_nits: int = 500

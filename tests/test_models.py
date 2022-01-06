@@ -1,6 +1,7 @@
 from _pytest.mark import param
 from numpy.lib.arraysetops import isin
 import tensorflow as tf
+import tensorflow_probability as tfp
 import dataclasses
 import gpflow
 from gpflow import kernels
@@ -52,3 +53,35 @@ def test_SGPR(data):
     for mat in [mu, sigma]:
         assert isinstance(mat, tf.Tensor)
         assert mat.numpy().shape == (n, d)
+
+
+@pytest.mark.parametrize("n_samples", [1, 2, 10])
+@pytest.mark.parametrize("d", [1, 2, 10])
+def test_joint_reconstruction(d, n_samples):
+    mu = np.cos(np.linspace(0, np.pi, num=d))
+    x_idx = np.linspace(-3.0, 3.0, num=d).reshape(-1, 1)
+    Sigma = gpflow.kernels.Matern32(lengthscales=0.5).K(x_idx)
+    L = np.linalg.cholesky(Sigma)
+    mvn = tfp.distributions.MultivariateNormalTriL(loc=mu, scale_tril=L)
+    marginals = [
+        tfp.distributions.Normal(loc=m, scale=s)
+        for m, s in zip(mu, np.diag(Sigma))
+    ]
+
+    model = ensembles.JointReconstruction(mu, np.diag(Sigma))
+
+    # Check model initialising is being done correctly
+    assert isinstance(model.mu, tfp.util.TransformedVariable)
+    assert isinstance(model.sigma_hat, tfp.util.TransformedVariable)
+
+    # Check fit
+    params = ensembles.config.ReconstructionParameters().to_dict()
+    params["optim_nits"] = 5
+
+    y_sample = mvn.sample(n_samples)
+    model.fit(y_sample, params)
+
+    # Check returned params
+    learned_mu, learned_sigma = model.return_parameters()
+    assert isinstance(learned_mu, tf.Tensor)
+    assert isinstance(learned_sigma, tf.Tensor)
