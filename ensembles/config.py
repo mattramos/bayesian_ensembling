@@ -1,6 +1,6 @@
 import json
 import pprint
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(repr=False)
