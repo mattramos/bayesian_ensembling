@@ -1,0 +1,2 @@
+Model output from large ensemble simulations were downloaded from the climate gateway openID required: https://www.earthsystemgrid.org/dataset/ucar.cgd.ccsm4.CLIVAR_LE.html
+Observational data was downloaded from the MetOffice (no login required): https://www.metoffice.gov.uk/hadobs/hadcrut5/data/current/download.html
