@@ -165,15 +165,22 @@ class JointReconstruction(tf.Module):
     ):
         super().__init__(name=name)
         self.mu, self.sigma_hat = self._build_parameters(means, variances)
+        self.objective_evals = []
 
-    def fit(self, samples: tf.Tensor, params: dict) -> None:
+    def fit(
+        self, samples: tf.Tensor, params: dict, compile_fn: bool = False
+    ) -> None:
         opt = tf.optimizers.Adam(learning_rate=params["learning_rate"])
-        objective = self._objective_fn()
+        if compile_fn:
+            objective = tf.function(self._objective_fn())
+        else:
+            objective = self._objective_fn()
 
         for _ in trange(params["optim_nits"]):
             with tf.GradientTape() as tape:
                 tape.watch(self.trainable_variables)
                 loss = objective(samples)
+                self.objective_evals.append(loss.numpy())
             grads = tape.gradient(loss, self.trainable_variables)
             opt.apply_gradients(zip(grads, self.trainable_variables))
 
@@ -181,6 +188,9 @@ class JointReconstruction(tf.Module):
         return tf.convert_to_tensor(self.mu), tf.convert_to_tensor(
             self.sigma_hat
         )
+
+    def return_joint_distribution(self) -> tfp.distributions.Distribution:
+        return tfp.distributions.MultivariateNormalTriL(self.mu, self.sigma_hat)
 
     def _objective_fn(self):
         dist = tfp.distributions.MultivariateNormalTriL(self.mu, self.sigma_hat)

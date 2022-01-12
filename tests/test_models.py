@@ -76,7 +76,7 @@ def test_joint_reconstruction(d, n_samples):
 
     # Check fit
     params = ensembles.config.ReconstructionParameters().to_dict()
-    params["optim_nits"] = 5
+    params["optim_nits"] = 50
 
     y_sample = mvn.sample(n_samples)
     model.fit(y_sample, params)
@@ -85,3 +85,13 @@ def test_joint_reconstruction(d, n_samples):
     learned_mu, learned_sigma = model.return_parameters()
     assert isinstance(learned_mu, tf.Tensor)
     assert isinstance(learned_sigma, tf.Tensor)
+
+    learned_dist = model.return_joint_distribution()
+    assert isinstance(learned_dist, tfp.distributions.MultivariateNormalTriL)
+
+    # Check objective logging is being done correctly
+    assert len(model.objective_evals) == params["optim_nits"]
+    # Check logged values are of float type
+    assert all([isinstance(i, float) for i in model.objective_evals])
+    # Check the objective is being minimised.
+    assert model.objective_evals[-1] < model.objective_evals[0]
