@@ -8,5 +8,5 @@ from .models import (
     SparseGP,
     JointReconstruction,
 )
-
+from .hgp import HSGP
 __version__ = "0.0.1"
