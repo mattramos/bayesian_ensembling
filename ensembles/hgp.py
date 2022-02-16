@@ -7,10 +7,11 @@ from gpflow.mean_functions import Zero
 
 import gpflow
 from gpflow.models import BayesianModel
-
+from gpflow.kernels import Kernel
+from gpflow.inducing_variables import InducingPoints
 from gpflow.models.training_mixins import InternalDataTrainingLossMixin
 from gpflow.models.util import data_input_to_tensor, inducingpoint_wrapper
-from gpflow.mean_functions import Zero
+from gpflow.mean_functions import Zero, MeanFunction
 
 from copy import deepcopy
 from tqdm import trange
@@ -24,8 +25,8 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
     def __init__(
         self,
         data,
-        group_kernel=None,
-        individual_kernel=None,
+        group_kernel,
+        individual_kernel,
         noise_variance=1.0,
         mean_function=None,
         inducing_points=np.linspace(-3, 3, 50).reshape(-1, 1),
@@ -38,6 +39,7 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
         self.Y = data_input_to_tensor(self.Y)  # n_data x n_reals
         self.noise = 0.01
         self.inducing_points = inducingpoint_wrapper(inducing_points)
+        self.num_inducing = inducing_points.shape[0]
         self.num_data = self.X.shape[0]
         # These deep copy statements could be problematic...
         # Group kernel
@@ -62,64 +64,18 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
         #
         return self.total_elbo()
 
-    # def total_elbo_map(self):
-
-    #     elements = [] #X, Y, Kernel for each calculation
-    #     for i in range(len(self.K_individual_list)):
-    #         for j in range(len(self.K_individual_list)):
-    #             if i==j:
-    #                 elements.append([
-    #                     self.X,
-    #                     self.Y[i],
-    #                     self.K_individual_list[i] + self.K_group])
-    #             else:
-    #                 elements.append([
-    #                     self.X,
-    #                     self.Y[i],
-    #                     self.K_group])
-    #     output = tf.reduce_sum(tf.map_fn(lambda x: calc_ELBO_part(*x), elements, fn_output_signature=tf.float64))
-
-    #     return output
-
-    # def sub_calc_ELBO_part(self, i, j):
-    #     output = tf.constant(0.0, dtype=tf.float64)
-    #     # This currently can't be decorated with tf.function because of the 
-    #     # indexing of the list of kernels. I think tf doesn't know how to represent
-    #     # the kernel objects on the graph. This happens because it is trying to 
-    #     # tensorise the kernels. I considered using tf.switch_case but didn't think that would help
-    #     if i != j:
-    #         output = self.calc_ELBO_part(
-    #             self.X,
-    #             tf.expand_dims(self.Y[:, tf.constant(i)], -1),
-    #             self.K_group)
-    #     elif i == j:
-    #         output = self.calc_ELBO_part(
-    #             self.X,
-    #             tf.expand_dims(self.Y[:, tf.constant(i)], -1),
-    #             self.K_individual_list[i] + self.K_group
-    #         )
-    #     return output
-
-    # def add_noise_cov(self, K: tf.Tensor, likelihood_variance) -> tf.Tensor:
-    #     """
-    #     Returns K + σ² I, where σ² is the likelihood noise variance (scalar),
-    #     and I is the corresponding identity matrix.
-    #     """
-    #     k_diag = tf.linalg.diag_part(K)
-    #     s_diag = tf.fill(tf.shape(k_diag), likelihood_variance)
-    #     return tf.linalg.set_diag(K, k_diag + s_diag)
-
     def predict_f(
-        self, xtest: tp.Union[np.ndarray, tf.Tensor],
+        self,
+        xtest: tp.Union[np.ndarray, tf.Tensor],
         kernel: gpflow.kernels.base.Kernel,
-        Y: tp.Union[np.ndarray, tf.Tensor]
+        Y: tp.Union[np.ndarray, tf.Tensor],
     ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
 
         Xi = self.X
-        # For group kernels average the Ys. Where Y is just (D x 1), 
+        # For group kernels average the Ys. Where Y is just (D x 1),
         # the output will still be the same
         err = tf.reshape(tf.reduce_mean(self.Y, axis=1), (-1, 1)) - self.mean_function(Xi)
-        
+
         num_inducing = self.inducing_points.num_inducing
         kuf = Kuf(self.inducing_points, kernel, Xi)
         kuu = Kuu(self.inducing_points, kernel, jitter=default_jitter())
@@ -148,66 +104,27 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
     def predict_group(
         self, xtest: tp.Union[np.ndarray, tf.Tensor]
     ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
-        
-        f_mean, f_var = self.predict_f(
-                            xtest,
-                            self.K_group,
-                            self.Y 
-                        )
+
+        f_mean, f_var = self.predict_f(xtest, self.K_group, self.Y)
         return self.likelihood.predict_mean_and_var(f_mean, f_var)
 
     def predict_individual(
-        self,
-        xtest: tp.Union[np.ndarray, tf.Tensor],
-        individual_idx: int
+        self, xtest: tp.Union[np.ndarray, tf.Tensor], individual_idx: int
     ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
-        
+
         f_mean, f_var = self.predict_f(
-                            xtest,
-                            self.K_group + self.K_individual_list[individual_idx],
-                            self.Y[:, individual_idx] 
-                        )
+            xtest, self.K_group + self.K_individual_list[individual_idx], self.Y[:, individual_idx]
+        )
         return self.likelihood.predict_mean_and_var(f_mean, f_var)
 
     def predict_individual_without_group(
-        self,
-        xtest: tp.Union[np.ndarray, tf.Tensor],
-        individual_idx: int
+        self, xtest: tp.Union[np.ndarray, tf.Tensor], individual_idx: int
     ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
-        
+
         f_mean, f_var = self.predict_f(
-                            xtest,
-                            self.K_individual_list[individual_idx],
-                            self.Y[:, individual_idx] 
-                        )
+            xtest, self.K_individual_list[individual_idx], self.Y[:, individual_idx]
+        )
         return f_mean, f_var
-
-    # def total_elbo_while(self):
-    #     i = tf.constant(0, dtype=tf.int32)
-    #     j = tf.constant(0, dtype=tf.int32)
-    #     tot = tf.constant(0, dtype=tf.float64)
-
-    #     # i_loop
-    #     def i_body(i, j, tot):
-    #         tot = tf.add(tot, self.sub_calc_ELBO_part(i, j))
-    #         return tf.add(i, 1), j, tot
-
-    #     # c_i = lambda i, j, tot: tf.less(i, j + 1)
-    #     c_i = lambda i, j, tot: tf.less(i, len(self.K_individual_list))
-    #     b_i = lambda i, j, tot: i_body(i, j, tot)
-    #     # b_i = lambda i, j, tot: (tf.add(i, 1), j, tf.add(tot, self.sub_calc_ELBO_part(i, j)))
-
-    #     def j_body(i, j, tot):
-    #         tot = tf.while_loop(c_i, b_i, [0, j, tot])[2]
-    #         return i, tf.add(j, 1), tot
-
-    #     # j_loop
-    #     c_j = lambda i, j, tot: tf.less(j, len(self.K_individual_list))
-    #     b_j = lambda i, j, tot: j_body(0, j, tot)
-
-    #     tot_fin = tf.while_loop(c_j, b_j, [i, j, tot])[2]
-
-    #     return tot_fin
 
     def total_elbo(self):
         self.loss_sum = tf.constant(0.0, dtype=tf.float64)
@@ -219,19 +136,15 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
                     elbo_part = self.calc_ELBO_part(
                         self.X,
                         tf.expand_dims(self.Y[:, i], -1),
-                        kernel=self.K_individual_list[i] + self.K_group)
-                    self.loss_sum = tf.add(
-                        self.loss_sum,
-                        elbo_part)
+                        kernel=self.K_individual_list[i] + self.K_group,
+                    )
+                    self.loss_sum = tf.add(self.loss_sum, elbo_part)
                 else:
                     # If off diagonal term use group kernel
                     elbo_part = self.calc_ELBO_part(
-                        self.X,
-                        tf.expand_dims(self.Y[:, i], -1),
-                        kernel=self.K_group)
-                    self.loss_sum = tf.add(
-                        self.loss_sum,
-                        elbo_part)
+                        self.X, tf.expand_dims(self.Y[:, i], -1), kernel=self.K_group
+                    )
+                    self.loss_sum = tf.add(self.loss_sum, elbo_part)
 
         return self.loss_sum
 
@@ -242,7 +155,7 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
         # print(Kdiag.shape)
         # kfu = kernel.K(X, self.inducing_points)
         kuu = kernel.K(self.inducing_points.Z, self.inducing_points.Z)  # might want jitter
-        # print(kuu.shape)
+        kuu += tf.eye(self.num_inducing, dtype=tf.float64) * 1e-6
         kuf = kernel.K(self.inducing_points.Z, X)
         # print(kuf.shape)
         I = tf.eye(tf.shape(kuu)[0], dtype=default_float())
@@ -266,10 +179,13 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
         )
         return const + logdet + quad
 
-    def fit(self, params):
+    def fit(self, params, compile: bool = False):
         self.objective_evals = []
         opt = tf.optimizers.Adam(learning_rate=params["learning_rate"])
-        objective = tf.function(self.training_loss)
+        if compile:
+            objective = tf.function(self.training_loss)
+        else:
+            objective = self.training_loss
 
         tr = trange(params["optim_nits"])
         for i in tr:
