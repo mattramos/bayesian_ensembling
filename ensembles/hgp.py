@@ -46,16 +46,23 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
         self.K_group = deepcopy(group_kernel)
         # Inidividual kernels
         self.K_individual_list = [deepcopy(individual_kernel) for i in range(self.Y.shape[1])]
+        self.likelihood = gpflow.likelihoods.Gaussian()
+        self.likelihood.variance.assign(noise_variance)
+        gpflow.utilities.set_trainable(self.likelihood.variance, False)
+        self.group_likelihood = deepcopy(self.likelihood)
+        self.individual_likelihoods = [deepcopy(self.likelihood) for i in range(self.Y.shape[1])]
+
+        
 
         # Default is zero mean function
         if mean_function is None:
             mean_function = Zero()
         self.mean_function = mean_function
 
-        # Should probably set noise variance as trainable(?)
-        self.likelihood = gpflow.likelihoods.Gaussian()
-        self.likelihood.variance.assign(noise_variance)
-
+        self.likelihoodvars = []
+        self.consts = []
+        self.logdets = []
+        self.quads = []
         self.elbos = []
 
     def maximum_log_likelihood_objective(self):
@@ -69,6 +76,7 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
         xtest: tp.Union[np.ndarray, tf.Tensor],
         kernel: gpflow.kernels.base.Kernel,
         Y: tp.Union[np.ndarray, tf.Tensor],
+        likelihood: gpflow.likelihoods.base
     ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
 
         Xi = self.X
@@ -81,7 +89,7 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
         kuu = Kuu(self.inducing_points, kernel, jitter=default_jitter())
         Kus = Kuf(self.inducing_points, kernel, xtest)
 
-        sigma = tf.sqrt(self.likelihood.variance)
+        sigma = tf.sqrt(likelihood.variance)
         L = tf.linalg.cholesky(kuu)
         A = tf.linalg.triangular_solve(L, kuf, lower=True) / sigma
         B = tf.linalg.matmul(A, A, transpose_b=True) + tf.eye(num_inducing, dtype=default_float())
@@ -102,29 +110,29 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
         return f_mean, f_var
 
     def predict_group(
-        self, xtest: tp.Union[np.ndarray, tf.Tensor]
+        self, xtest: tp.Union[np.ndarray, tf.Tensor],
     ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
 
-        f_mean, f_var = self.predict_f(xtest, self.K_group, self.Y)
-        return self.likelihood.predict_mean_and_var(f_mean, f_var)
+        f_mean, f_var = self.predict_f(xtest, self.K_group, self.Y, self.group_likelihood)
+        return self.group_likelihood.predict_mean_and_var(f_mean, f_var)
 
     def predict_individual(
         self, xtest: tp.Union[np.ndarray, tf.Tensor], individual_idx: int
     ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
 
         f_mean, f_var = self.predict_f(
-            xtest, self.K_group + self.K_individual_list[individual_idx], self.Y[:, individual_idx]
+            xtest, self.K_group + self.K_individual_list[individual_idx], self.Y[:, individual_idx], self.individual_likelihoods[individual_idx]
         )
-        return self.likelihood.predict_mean_and_var(f_mean, f_var)
+        return self.individual_likelihoods[individual_idx].predict_mean_and_var(f_mean, f_var)
 
     def predict_individual_without_group(
         self, xtest: tp.Union[np.ndarray, tf.Tensor], individual_idx: int
     ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
 
         f_mean, f_var = self.predict_f(
-            xtest, self.K_individual_list[individual_idx], self.Y[:, individual_idx]
+            xtest, self.K_individual_list[individual_idx], self.Y[:, individual_idx], self.individual_likelihoods[individual_idx]
         )
-        return f_mean, f_var
+        return self.individual_likelihoods[individual_idx].predict_mean_and_var(f_mean, f_var)
 
     def total_elbo(self):
         self.loss_sum = tf.constant(0.0, dtype=tf.float64)
@@ -136,19 +144,20 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
                     elbo_part = self.calc_ELBO_part(
                         self.X,
                         tf.expand_dims(self.Y[:, i], -1),
-                        kernel=self.K_individual_list[i] + self.K_group,
+                        self.K_individual_list[i] + self.K_group,
+                        self.individual_likelihoods[i]
                     )
                     self.loss_sum = tf.add(self.loss_sum, elbo_part)
                 else:
                     # If off diagonal term use group kernel
                     elbo_part = self.calc_ELBO_part(
-                        self.X, tf.expand_dims(self.Y[:, i], -1), kernel=self.K_group
+                        self.X, tf.expand_dims(self.Y[:, i], -1), self.K_group, self.group_likelihood
                     )
                     self.loss_sum = tf.add(self.loss_sum, elbo_part)
 
         return self.loss_sum
 
-    def calc_ELBO_part(self, X, Y, kernel):
+    def calc_ELBO_part(self, X, Y, kernel, likelihood):
         tf.debugging.assert_shapes([(X, ("N", "D")), (Y, ("N", 1))])
         # Using the code and approach from gpflow.models.SGPRBase_deprecated.upper_bound
         Kdiag = kernel(X, full_cov=False)
@@ -162,13 +171,13 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
         Luu = tf.linalg.cholesky(kuu)
         A = tf.linalg.triangular_solve(Luu, kuf, lower=True)
         AAT = tf.linalg.matmul(A, A, transpose_b=True)
-        B = I + AAT / self.likelihood.variance
+        B = I + AAT / likelihood.variance
         LB = tf.linalg.cholesky(B)
 
         # Trace term
         c = tf.reduce_sum(Kdiag) - tf.reduce_sum(tf.square(A))
-        corrected_noise = self.likelihood.variance + c
-        const = -0.5 * self.num_data * tf.math.log(2 * np.pi * self.likelihood.variance)
+        corrected_noise = likelihood.variance + c
+        const = - 0.5 * self.num_data * tf.math.log(2 * np.pi * likelihood.variance)
         logdet = -tf.reduce_sum(tf.math.log(tf.linalg.diag_part(LB)))
 
         err = Y - self.mean_function(X)
@@ -177,6 +186,11 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
         quad = -0.5 * tf.reduce_sum(tf.square(err)) / corrected_noise + 0.5 * tf.reduce_sum(
             tf.square(v)
         )
+        self.quads.append(quad.numpy())
+        self.logdets.append(logdet.numpy())
+        self.consts.append(const.numpy())
+        self.likelihoodvars.append(likelihood.variance.numpy())
+
         return const + logdet + quad
 
     def fit(self, params, compile: bool = False):
@@ -195,3 +209,9 @@ class HSGP(BayesianModel, InternalDataTrainingLossMixin):
                 self.objective_evals.append(loss.numpy())
             grads = tape.gradient(loss, self.trainable_variables)
             opt.apply_gradients(zip(grads, self.trainable_variables))
+            tr.set_postfix({"ELBO": -loss.numpy()})
+
+    def chol_solve(L, y):
+        lx = solve_triangular(L, y, lower=True)
+        x = solve_triangular(L, lx, lower=True, trans=1)
+        return x
