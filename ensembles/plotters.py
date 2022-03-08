@@ -32,13 +32,14 @@ def plot_individual_preds(
     truth: np.ndarray,
     individual_preds: tp.List[tp.Tuple[np.ndarray, np.ndarray]],
     filename: str = None,
+    data_filename: str = None,
 ):
     mus = np.vstack([i[0].numpy() for i in individual_preds])
     sigmas = np.vstack([i[1].numpy() for i in individual_preds])
 
     n_realisations = len(individual_preds)
     n_obs = individual_preds[0][0].numpy().shape[0]
-    Xtes = np.repeat(Xte, n_realisations).reshape(-1, 1)
+    Xtes = np.tile(Xte.squeeze(), n_realisations).reshape(-1, 1)
     Ylong = truth.reshape(-1, 1)
     idx = np.tile(np.arange(n_realisations), n_obs).reshape(-1, 1)
     # results = pd.DataFrame(
@@ -53,19 +54,19 @@ def plot_individual_preds(
         plt.savefig(filename)
     return g
 
-    group_mean, group_var = hsgp.predict_group(Xte)
-    group_mean = group_mean.numpy().squeeze()
-    group_std = np.sqrt(group_var.numpy().squeeze())
-    x = X.squeeze()
-    xte = Xte.squeeze()
 
-
-def plot_group_pred(mu, sigma, Xtr, realisations, Xte, ax, n_stds: int = 3, filename: str = None):
+def plot_group_pred(
+    mu, sigma, Xtr, realisations, latent_y, Xte, ax, n_stds: int = 3, filename: str = None
+):
     std_alpha = 0.1
     for j in range(1, n_stds + 1):
         ax.fill_between(Xte, mu - j * sigma, mu + j * sigma, alpha=std_alpha * j, color="tab:blue")
     ax.plot(Xte, mu, color="tab:blue", label="Pred")
-    [ax.plot(Xtr, r, alpha=0.3, color="tab:orange") for r in realisations.T]
+    ax.plot(Xtr, latent_y, color="tab:orange", label="Truth")
+    [
+        ax.plot(Xtr, r, alpha=0.3, color="tab:orange", label="Realisation", linestyle="--")
+        for r in realisations.T
+    ]
     ax = _unique_legend(ax)
     sns.despine()
     if filename:
