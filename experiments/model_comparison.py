@@ -1,12 +1,7 @@
-from random import choice
-from xml.dom.expatbuilder import parseString
-from parso import parse
 import tensorflow as tf
-import tensorflow_probability as tfp
 import numpy as np
 import matplotlib.pyplot as plt
 import gpflow
-import typing as tp
 
 from ensembles.plotters import plot_individual_preds, plot_group_pred
 
@@ -54,7 +49,9 @@ if __name__ == "__main__":
     # Evaluate
     Xte = np.linspace(xlims[0] * 1.1, xlims[1] * 1.1, args["n_obs"]).reshape(-1, 1)
     indi_preds = [hsgp.predict_individual(Xte, idx) for idx in range(args["n_realisation"])]
-    plot_individual_preds(Xte, Ys, indi_preds, "individual_preds.png")
+    plot_individual_preds(
+        Xte=Xte, truth=Ys, individual_preds=indi_preds, filename="individual_preds.png"
+    )
 
     group_mean, group_var = hsgp.predict_group(Xte)
     group_mean = group_mean.numpy().squeeze()
@@ -65,6 +62,7 @@ if __name__ == "__main__":
         sigma=group_std,
         Xte=Xte.squeeze(),
         Xtr=X.squeeze(),
+        latent_y=Y,
         realisations=Ys,
         ax=ax,
         filename="group_preds.png",
