@@ -43,3 +43,37 @@ def gaussian_barycentre(
         return ot.datasets.make_1D_gauss(n_bins, mu, sigma)
     else:
         return mu, sigma
+
+
+def mvgaussian_barycentre(
+    means,
+    covariances,
+    weights,
+    tolerance: float = 1e-6,
+    init_var=1.0,
+    as_hist: bool = False,
+    n_bins=100,
+):
+    barycentre_variance = init_var
+    while True:
+        candidate_variance = 0
+
+        for w, s in zip(weights, std_devs):
+            candidate_variance += w * np.sqrt(barycentre_variance) * s
+
+        if candidate_variance - barycentre_variance < tolerance:
+            barycentre_variance = candidate_variance
+            break
+        else:
+            barycentre_variance = candidate_variance
+    mu = np.sum(weights * means)
+    sigma = np.sqrt(barycentre_variance)
+    if as_hist:
+        return ot.datasets.make_1D_gauss(n_bins, mu, sigma)
+    else:
+        return mu, sigma
+
+
+def print_numbers(numbers):
+    for n in numbers:
+        print(n)
