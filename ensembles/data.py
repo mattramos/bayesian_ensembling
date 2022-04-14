@@ -7,6 +7,11 @@ import typing as tp
 from dataclasses import dataclass
 import numpy as np
 from .array_types import ColumnVector, Matrix
+from .plotters import _unique_legend, cmap, get_style_cycler
+import seaborn as sns
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+sns.set_style('darkgrid')
 
 
 @dataclass
@@ -54,6 +59,11 @@ class ProcessModel:
     def n_realisations(self) -> int:
         return self.model_data.shape[1]
 
+    @property
+    def time(self) -> ColumnVector:
+        time = pd.DatetimeIndex(self.model_data.index)
+        return time
+
     def standardise_data(self) -> pd.DataFrame:
         # TODO: Return a ProcessModel from here
         # TODO: May have to think about standardising the data before/after climatology at the ensemble level.
@@ -80,7 +90,15 @@ class ProcessModel:
 
     def plot(self, ax: tp.Optional[tp.Any] = None, **kwargs) -> tp.Any:
         # TODO: Write some plotting code here.
-        raise NotImplementedError
+        fig, ax = plt.subplots(figsize=(12, 7))
+        x = self.time
+        ax.set_prop_cycle(style_cyler())
+        ax.plot(x, self.realisations, alpha=0.1, color='gray', label='Realisations')
+        ax.plot(x, self.temporal_mean, label='Model mean', alpha=0.7)
+        ax.legend(loc='best')
+        ax = _unique_legend(ax)
+        ax.set_title(self.model_name)
+        fig.show()
 
     @property
     def temporal_mean(self) -> jnp.DeviceArray:
@@ -105,28 +123,32 @@ class ProcessModel:
         return self
 
     def __next__(self):
-        self.idx += 1
         try:
-            return self.realisations[:, self.idx]
+            out =  self.realisations[:, self.idx]
+            self.idx += 1
         except IndexError:
             self.idx = 0
             raise StopIteration  # Done iterating.
+        return out
 
 
 @dataclass
 class ModelCollection:
     models: tp.List[ProcessModel]
+    idx: int = 0
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        self.idx += 1
+        # TODO: Check this after MA change
         try:
-            return self.models[self.idx]
+            out =  self.models[self.idx]
+            self.idx += 1
         except IndexError:
             self.idx = 0
             raise StopIteration  # Done iterating.
+        return out
 
     @property
     def number_of_models(self):
@@ -140,3 +162,30 @@ class ModelCollection:
 
     def multivariate_gaussian_set(self) -> tp.Dict[str, distrax.Distribution]:
         return {model.model_name: model.as_multivariate_gaussian for model in self.models}
+
+    def plot_all(self, ax: tp.Optional[tp.Any] = None, **kwargs) -> tp.Any:
+        # TODO: Write some plotting code here.
+        fig, ax = plt.subplots(figsize=(12, 7))
+        ax.set_prop_cycle(get_style_cycler())
+        for model in self:
+            x = model.time
+            ax.plot(x, model.temporal_mean, alpha=0.5, label=model.model_name)
+        ax.legend(loc='best')
+        fig.show()
+
+    def plot_grid(self, ax: tp.Optional[tp.Any] = None, **kwargs) -> tp.Any:
+        # TODO: Write some plotting code here.
+        style_cycler = get_style_cycler()
+        fig, axes = plt.subplots(
+            figsize=(10, 4 * np.ceil(self.number_of_models/3)),
+            nrows=round(np.ceil(self.number_of_models/3)),
+            ncols=3,
+            sharey=True)
+        for model, ax, args in zip(self, axes.ravel(), style_cycler):
+            x = model.time
+            ax.plot(x, model.realisations, alpha=0.1, color='gray', label='Realisations')
+            ax.plot(x, model.temporal_mean, alpha=0.7, label=model.model_name, **args)
+            ax.legend(loc='best')
+            ax = _unique_legend(ax)
+
+        fig.show()
