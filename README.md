@@ -45,3 +45,17 @@ versioning. Notebooks can be built locally by running `make notebooks`
 ### Tests
 
 Tests are helpful but by no means a requirement. PyTest is used for unit tests.
+
+## Thoughts
+
+- Consider alternative distributions for different problem domains e.g., spike-and-slab Bernoulli-Gamma for precipitation.
+
+## EOD 14/4
+
+Yet to do:
+
+- Implement weighting in the Ensemble
+- Checked the Log-likelihood weighting object's functionality
+- Plotting functionality (Matt)
+- Stitch all the pieces together in the notebook.
+- Think about computing the barycentre properly i.e., OTT-Jax/Analytical/POT

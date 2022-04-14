@@ -37,18 +37,12 @@ class Model:
         )
         self._fit(X_transformed, y_transformed, params)
 
-    def predict(
-        self, X: Matrix, params: dict
-    ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
+    def predict(self, X: Matrix, params: dict) -> tp.Tuple[tf.Tensor, tf.Tensor]:
         X_transformed = self.transform_X(X, training=False)
-        tf.debugging.assert_shapes(
-            [(X, ("N", "D")), (X_transformed, ("N", "K"))]
-        )
+        tf.debugging.assert_shapes([(X, ("N", "D")), (X_transformed, ("N", "K"))])
         mu, sigma2 = self._predict(X, params)
         mu, sigma2 = self.untransform_outputs(mu, sigma2)
-        tf.debugging.assert_shapes(
-            [(X, ("N", "D")), (mu, ("N", "K")), (sigma2, ("N", "K"))]
-        )
+        tf.debugging.assert_shapes([(X, ("N", "D")), (mu, ("N", "K")), (sigma2, ("N", "K"))])
         return mu, sigma2
 
     def transform_X(self, X: Matrix, training: bool = True):
@@ -77,12 +71,8 @@ class GPFlowModel(Model):
         self.kernel = kernel
         self.model: GPModel = None
 
-    def _predict(
-        self, X: Matrix, params: dict
-    ) -> tp.Tuple[tf.Tensor, tf.Tensor]:
-        tf_data = tf.data.Dataset.from_tensor_slices(X).batch(
-            params["batch_size"]
-        )
+    def _predict(self, X: Matrix, params: dict) -> tp.Tuple[tf.Tensor, tf.Tensor]:
+        tf_data = tf.data.Dataset.from_tensor_slices(X).batch(params["batch_size"])
 
         @tf.function
         def pred(batch):
@@ -139,9 +129,7 @@ class SparseGP(GPFlowModel):
         # Compile loss fn.
         @tf.function
         def step():
-            opt.minimize(
-                self.model.training_loss, self.model.trainable_variables
-            )
+            opt.minimize(self.model.training_loss, self.model.trainable_variables)
 
         # Run optimisation
         tr = trange(params["optim_nits"])
@@ -152,24 +140,18 @@ class SparseGP(GPFlowModel):
                 self.elbos.append(elbo)
                 tr.set_postfix({"ELBO": elbo})
 
-    def _constuct_inducing_locs(
-        self, X: Matrix, n_inducing: int
-    ) -> InducingPoints:
+    def _constuct_inducing_locs(self, X: Matrix, n_inducing: int) -> InducingPoints:
         Z = kmeans2(data=X, k=n_inducing, minit="points")[0]
         return InducingPoints(Z)
 
 
 class JointReconstruction(tf.Module):
-    def __init__(
-        self, means: Vector, variances: Vector, name="JointReconstruction"
-    ):
+    def __init__(self, means: Vector, variances: Vector, name="JointReconstruction"):
         super().__init__(name=name)
         self.mu, self.sigma_hat = self._build_parameters(means, variances)
         self.objective_evals = []
 
-    def fit(
-        self, samples: tf.Tensor, params: dict, compile_fn: bool = False
-    ) -> None:
+    def fit(self, samples: tf.Tensor, params: dict, compile_fn: bool = False) -> None:
         opt = tf.optimizers.Adam(learning_rate=params["learning_rate"])
         if compile_fn:
             objective = tf.function(self._objective_fn())
@@ -185,9 +167,7 @@ class JointReconstruction(tf.Module):
             opt.apply_gradients(zip(grads, self.trainable_variables))
 
     def return_parameters(self) -> tp.Tuple[tf.Tensor, tf.Tensor]:
-        return tf.convert_to_tensor(self.mu), tf.convert_to_tensor(
-            self.sigma_hat
-        )
+        return tf.convert_to_tensor(self.mu), tf.convert_to_tensor(self.sigma_hat)
 
     def return_joint_distribution(self) -> tfp.distributions.Distribution:
         return tfp.distributions.MultivariateNormalTriL(self.mu, self.sigma_hat)
@@ -211,9 +191,7 @@ class JointReconstruction(tf.Module):
             trainable=False,
         )
         sigma_hat = tfp.util.TransformedVariable(
-            initial_value=tf.cast(
-                tf.eye(num_rows=means.shape[0]) * variances, dtype=tf.float64
-            ),
+            initial_value=tf.cast(tf.eye(num_rows=means.shape[0]) * variances, dtype=tf.float64),
             bijector=tfp.bijectors.FillTriangular(),
             dtype=tf.float64,
             trainable=True,

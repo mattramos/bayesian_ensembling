@@ -2,22 +2,25 @@ import typing as tp
 
 import tensorflow as tf
 
-from .data import Dataset
+from .data import ModelCollection, ProcessModel
+from .weights import Weight
 from .models import Model
 
 
 class Ensemble:
-    def __init__(self, name: "Ensemble") -> None:
+    def __init__(
+        self, models: ModelCollection, observations: ProcessModel, name: "Ensemble"
+    ) -> None:
+        self.models = models
+        self.observations = observations
         self.name = name
         self.models: tp.List = None
+        assert self.validate_inputs()
 
-    def fit(self, data: Dataset, base_model_constructor: tp.Callable, params: dict) -> None:
-        y = data.y
-        Xs = data.Xs
-        self.models = [base_model_constructor() for _ in range(data.n_datasets)]
-        [model.fit(X, y, params) for X, model in zip(Xs, self.models)]
+    def validate_inputs(self) -> bool:
+        equality = [len(m) == len(self.observations) for m in self.models]
+        return all(equality)
 
-    def predict(self, data: Dataset, params: dict) -> tp.List[tp.Tuple[tf.Tensor, tf.Tensor]]:
-        Xs = data.Xs
-        preds = [model.predict(X, params) for X, model in zip(Xs, self.models)]
-        return preds
+    def fit(self, weighting_scheme: Weight) -> None:
+        for t in time_points:
+            weights = compute_weights(self.models, self.observations)

@@ -99,7 +99,7 @@ class ProcessModel:
         return distrax.MultivariateNormalTri(self.temporal_mean, L)
 
     def __len__(self) -> int:
-        return self.n_observations
+        return self.n_realisations
 
     def __iter__(self):
         return self
@@ -111,3 +111,32 @@ class ProcessModel:
         except IndexError:
             self.idx = 0
             raise StopIteration  # Done iterating.
+
+
+@dataclass
+class ModelCollection:
+    models: tp.List[ProcessModel]
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        self.idx += 1
+        try:
+            return self.models[self.idx]
+        except IndexError:
+            self.idx = 0
+            raise StopIteration  # Done iterating.
+
+    @property
+    def number_of_models(self):
+        return len(self.models)
+
+    def __len__(self):
+        return len(self.models)
+
+    def __getitem__(self, item):
+        return self.models[item]
+
+    def multivariate_gaussian_set(self) -> tp.Dict[str, distrax.Distribution]:
+        return {model.model_name: model.as_multivariate_gaussian for model in self.models}
