@@ -52,6 +52,14 @@ class ProcessModel:
         return self.model_data.values
 
     @property
+    def max_val(self) -> int:
+        return np.max(self.model_data.values)
+
+    @property
+    def min_val(self) -> int:
+        return np.min(self.model_data.values)
+
+    @property
     def n_observations(self) -> int:
         return self.model_data.shape[0]
 
@@ -92,7 +100,7 @@ class ProcessModel:
         # TODO: Write some plotting code here.
         fig, ax = plt.subplots(figsize=(12, 7))
         x = self.time
-        ax.set_prop_cycle(style_cyler())
+        ax.set_prop_cycle(get_style_cycler())
         ax.plot(x, self.realisations, alpha=0.1, color='gray', label='Realisations')
         ax.plot(x, self.temporal_mean, label='Model mean', alpha=0.7)
         ax.legend(loc='best')
@@ -151,8 +159,24 @@ class ModelCollection:
         return out
 
     @property
+    def max_val(self) -> int:
+        return np.max([model.max for model in self.models])
+
+    @property
+    def min_val(self) -> int:
+        return np.min([model.max for model in self.models])
+
+    @property
+    def n_observations(self) -> int:
+        return self.models[0].model_data.shape[0]
+
+    @property
     def number_of_models(self):
         return len(self.models)
+
+    @property
+    def model_names(self):
+        return [model.model_name for model in self.models]
 
     def __len__(self):
         return len(self.models)
@@ -164,8 +188,7 @@ class ModelCollection:
         return {model.model_name: model.as_multivariate_gaussian for model in self.models}
 
     def plot_all(self, ax: tp.Optional[tp.Any] = None, **kwargs) -> tp.Any:
-        # TODO: Write some plotting code here.
-        fig, ax = plt.subplots(figsize=(12, 7))
+        fig, ax = plt.subplots(figsize=(15, 7))
         ax.set_prop_cycle(get_style_cycler())
         for model in self:
             x = model.time
@@ -174,10 +197,9 @@ class ModelCollection:
         fig.show()
 
     def plot_grid(self, ax: tp.Optional[tp.Any] = None, **kwargs) -> tp.Any:
-        # TODO: Write some plotting code here.
         style_cycler = get_style_cycler()
         fig, axes = plt.subplots(
-            figsize=(10, 4 * np.ceil(self.number_of_models/3)),
+            figsize=(15, 4 * np.ceil(self.number_of_models/3)),
             nrows=round(np.ceil(self.number_of_models/3)),
             ncols=3,
             sharey=True)

@@ -2,6 +2,8 @@ import numpy as np
 import ot
 import tensorflow_probability as tfp
 import tensorflow as tf
+import distrax
+import jax.numpy as jnp
 
 tfd = tfp.distributions
 
@@ -43,3 +45,4 @@ def gaussian_barycentre(
         return ot.datasets.make_1D_gauss(n_bins, mu, sigma)
     else:
         return mu, sigma
+
