@@ -45,6 +45,7 @@ class ProcessModel:
     def __post_init__(self):
         self.model_mean = self.model_data.mean()
         self.model_std = self.model_data.std()
+        self.climatology = None
 
     @property
     def realisations(self) -> jnp.DeviceArray:
@@ -81,20 +82,43 @@ class ProcessModel:
         # TODO: Return a ProcessModel from here
         return df.mul(self.model_std).add(self.model_mean)
 
-    def calculate_climatology(self) -> pd.DataFrame:
-        # TODO: Return a ProcessModel from here
-        # TODO: Matt to tidy this up
-        df = self.model_data.copy(deep=True)
-        t0 = "1961-01-01"
-        t1 = "1990-31-12"
-        df["month"] = [int(t.split("-")[1]) for t in df.index]
-        for col in df.columns[:-1]:
-            clim_df = df[[col, "month"]][np.logical_and(df.index >= t0, df.index <= t1)]
-            clim = clim_df.groupby(["month"]).mean()[col].values
-            clim_tot = np.tile(clim, len(df) // 12)
-            df[col] = df[col] - clim_tot
-        df.drop(["month"], axis=1, inplace=True)
-        return df
+    def calculate_anomaly(self, climatology=False):
+        # If a climatology is not specified, it calculates one and returns it
+        df_ = self.model_data.copy(deep=True)
+        if np.any(climatology) == False:
+            t0 = "1961-01-01"
+            t1 = "1990-31-12"
+            df_["month"] = [int(t.split("-")[1]) for t in df_.index]
+            clim_df = df_[np.logical_and(df_.index >= t0, df_.index <= t1)]
+            clim = clim_df.groupby(["month"]).mean().mean(axis=1).values
+            df_.drop(["month"], axis=1, inplace=True)
+        else:
+            clim = climatology
+            assert clim.shape == (12,), 'Climatology is the incorrect length (must be 12)'
+        clim_tot = np.tile(clim, len(df_) // 12).reshape(-1, 1)
+        df_ = df_ - clim_tot
+        # Save climatology
+        self.climatology = clim
+        anomaly_model = ProcessModel(df_, self.model_name)
+        anomaly_model.climatology = clim
+
+        return anomaly_model
+    
+
+    # def calculate_climatology(self) -> pd.DataFrame:
+    #     # TODO: Return a ProcessModel from here
+    #     # TODO: Matt to tidy this up
+    #     df = self.model_data.copy(deep=True)
+    #     t0 = "1961-01-01"
+    #     t1 = "1990-31-12"
+    #     df["month"] = [int(t.split("-")[1]) for t in df.index]
+    #     for col in df.columns[:-1]:
+    #         clim_df = df[[col, "month"]][np.logical_and(df.index >= t0, df.index <= t1)]
+    #         clim = clim_df.groupby(["month"]).mean()[col].values
+    #         clim_tot = np.tile(clim, len(df) // 12)
+    #         df[col] = df[col] - clim_tot
+    #     df.drop(["month"], axis=1, inplace=True)
+    #     return df
 
     def plot(self, ax: tp.Optional[tp.Any] = None, **kwargs) -> tp.Any:
         # TODO: Write some plotting code here.
@@ -157,6 +181,10 @@ class ModelCollection:
             self.idx = 0
             raise StopIteration  # Done iterating.
         return out
+
+    @property
+    def time(self) -> ColumnVector:
+        return self.models[0].time
 
     @property
     def max_val(self) -> int:
