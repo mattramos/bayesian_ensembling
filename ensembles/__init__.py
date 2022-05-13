@@ -1,5 +1,5 @@
 from .config import GPRParameters, SGPRParameters
-from .data import Dataset, ProcessModel, ModelCollection
+from .data import ProcessModel, ModelCollection
 from .ensembles import Ensemble
 from .models import (
     ConjugateGP,
