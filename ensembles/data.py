@@ -11,7 +11,6 @@ from .plotters import _unique_legend, cmap, get_style_cycler
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-sns.set_style('darkgrid')
 
 
 @dataclass
@@ -41,6 +40,7 @@ class ProcessModel:
     model_data: pd.DataFrame
     model_name: str
     idx: int = 0
+    _distribution = None
 
     def __post_init__(self):
         self.model_mean = self.model_data.mean()
@@ -94,7 +94,7 @@ class ProcessModel:
             df_.drop(["month"], axis=1, inplace=True)
         else:
             clim = climatology
-            assert clim.shape == (12,), 'Climatology is the incorrect length (must be 12)'
+            assert clim.shape == (12,), "Climatology is the incorrect length (must be 12)"
         clim_tot = np.tile(clim, len(df_) // 12).reshape(-1, 1)
         df_ = df_ - clim_tot
         # Save climatology
@@ -103,7 +103,6 @@ class ProcessModel:
         anomaly_model.climatology = clim
 
         return anomaly_model
-    
 
     # def calculate_climatology(self) -> pd.DataFrame:
     #     # TODO: Return a ProcessModel from here
@@ -122,15 +121,16 @@ class ProcessModel:
 
     def plot(self, ax: tp.Optional[tp.Any] = None, **kwargs) -> tp.Any:
         # TODO: Write some plotting code here.
-        fig, ax = plt.subplots(figsize=(12, 7))
+        if not ax:
+            fig, ax = plt.subplots(figsize=(12, 7))
         x = self.time
         ax.set_prop_cycle(get_style_cycler())
-        ax.plot(x, self.realisations, alpha=0.1, color='gray', label='Realisations')
-        ax.plot(x, self.temporal_mean, label='Model mean', alpha=0.7)
-        ax.legend(loc='best')
+        ax.plot(x, self.realisations, alpha=0.1, color="gray", label="Realisations")
+        ax.plot(x, self.temporal_mean, label="Model mean", alpha=0.7)
+        ax.legend(loc="best")
         ax = _unique_legend(ax)
         ax.set_title(self.model_name)
-        fig.show()
+        return ax
 
     @property
     def temporal_mean(self) -> jnp.DeviceArray:
@@ -144,9 +144,12 @@ class ProcessModel:
         return jnp.cov(model_vals)
 
     @property
-    def as_multivariate_gaussian(self) -> distrax.Distribution:
-        L = jnp.linalg.cholesky(self.temporal_covariance + jnp.eye(self.n_observations) * 1e-8)
-        return distrax.MultivariateNormalTri(self.temporal_mean, L)
+    def distribution(self) -> distrax.Distribution:
+        return self._distribution
+
+    @distribution.setter
+    def distribution(self, mvn: distrax.Distribution):
+        self._distribution = mvn
 
     def __len__(self) -> int:
         return self.n_realisations
@@ -156,7 +159,7 @@ class ProcessModel:
 
     def __next__(self):
         try:
-            out =  self.realisations[:, self.idx]
+            out = self.realisations[:, self.idx]
             self.idx += 1
         except IndexError:
             self.idx = 0
@@ -175,7 +178,7 @@ class ModelCollection:
     def __next__(self):
         # TODO: Check this after MA change
         try:
-            out =  self.models[self.idx]
+            out = self.models[self.idx]
             self.idx += 1
         except IndexError:
             self.idx = 0
@@ -212,30 +215,42 @@ class ModelCollection:
     def __getitem__(self, item):
         return self.models[item]
 
-    def multivariate_gaussian_set(self) -> tp.Dict[str, distrax.Distribution]:
-        return {model.model_name: model.as_multivariate_gaussian for model in self.models}
+    def distributions(self) -> tp.Dict[str, distrax.Distribution]:
+        return {model.model_name: model.distribution for model in self.models}
 
-    def plot_all(self, ax: tp.Optional[tp.Any] = None, **kwargs) -> tp.Any:
-        fig, ax = plt.subplots(figsize=(15, 7))
+    def plot_all(self, ax: tp.Optional[tp.Any] = None, legend: bool = False, **kwargs) -> tp.Any:
+        if not ax:
+            fig, ax = plt.subplots(figsize=(15, 7))
+
         ax.set_prop_cycle(get_style_cycler())
         for model in self:
             x = model.time
             ax.plot(x, model.temporal_mean, alpha=0.5, label=model.model_name)
-        ax.legend(loc='best')
-        fig.show()
+        if legend:
+            ax.legend(loc="best")
+        return ax
 
     def plot_grid(self, ax: tp.Optional[tp.Any] = None, **kwargs) -> tp.Any:
         style_cycler = get_style_cycler()
         fig, axes = plt.subplots(
-            figsize=(15, 4 * np.ceil(self.number_of_models/3)),
-            nrows=round(np.ceil(self.number_of_models/3)),
+            figsize=(15, 4 * np.ceil(self.number_of_models / 3)),
+            nrows=round(np.ceil(self.number_of_models / 3)),
             ncols=3,
-            sharey=True)
+            sharey=True,
+        )
         for model, ax, args in zip(self, axes.ravel(), style_cycler):
             x = model.time
-            ax.plot(x, model.realisations, alpha=0.1, color='gray', label='Realisations')
+            ax.plot(x, model.realisations, alpha=0.1, color="gray", label="Realisations")
             ax.plot(x, model.temporal_mean, alpha=0.7, label=model.model_name, **args)
-            ax.legend(loc='best')
+            ax.legend(loc="best")
             ax = _unique_legend(ax)
 
         fig.show()
+
+    @property
+    def covariance_stack(self) -> jnp.DeviceArray:
+        return jnp.stack([model.distribution.covariance() for model in self.models])
+
+    @property
+    def mean_stack(self) -> jnp.DeviceArray:
+        return jnp.stack([model.distribution.mean() for model in self.models])

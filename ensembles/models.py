@@ -1,25 +1,21 @@
 import abc
 import typing as tp
+from pytest import param
 
-import gpflow
-from numpy.core.arrayprint import _leading_trailing
-from numpy.core.fromnumeric import var
 import tensorflow as tf
-from gpflow import inducing_variables
-from gpflow.inducing_variables import InducingPoints
-from gpflow.kernels import Kernel
-from gpflow.models import GPR, SGPR
-from gpflow.models.model import GPModel
-from gpflow.optimizers import Scipy
-from scipy.cluster.vq import kmeans2
-from tensorflow.python.ops.gen_math_ops import Mod
 import tensorflow_probability as tfp
-from tqdm import tqdm, trange
+from tqdm import trange
+import distrax as dx
+import jax.numpy as jnp
+import jax
+import optax as ox
+import warnings
 
+from .data import ModelCollection
 from .array_types import ColumnVector, Matrix, Vector
 
 
-class Model:
+class AbstractModel:
     def __init__(self, name: str = "Model") -> None:
         self.name = name
         self.model = None
@@ -65,84 +61,59 @@ class Model:
         raise NotImplementedError
 
 
-class GPFlowModel(Model):
-    def __init__(self, kernel: Kernel, name: str = "GPFlow Model") -> None:
-        super().__init__(name=name)
-        self.kernel = kernel
-        self.model: GPModel = None
+class MeanFieldApproximation:
+    def __init__(
+        self,
+        name="MeanFieldModel",
+    ):
+        self.name = name
 
-    def _predict(self, X: Matrix, params: dict) -> tp.Tuple[tf.Tensor, tf.Tensor]:
-        tf_data = tf.data.Dataset.from_tensor_slices(X).batch(params["batch_size"])
+    def step_fn(self, samples: tf.Tensor, negative: bool = False) -> None:
+        obs = samples.T
+        constant = jnp.array(-1.0) if negative else jnp.array(1.0)
 
-        @tf.function
-        def pred(batch):
-            return self.model.predict_y(batch)
+        def step(params: dict):
+            mu = params["mean"]
+            sigma = params["variance"]
+            dist = dx.MultivariateNormalDiag(mu, sigma)
+            log_prob = jnp.sum(dist.log_prob(obs))
+            return log_prob * constant
 
-        pred_matrix = tf.concat(
-            [
-                b
-                for b in tqdm(
-                    tf_data.prefetch(tf.data.AUTOTUNE).map(
-                        pred, num_parallel_calls=tf.data.AUTOTUNE
-                    ),
-                    desc="Predicting",
-                )
-            ],
-            axis=1,
-        )
-        return pred_matrix[0, :, :], pred_matrix[1, :, :]
+        return step
 
-    @abc.abstractmethod
-    def _fit(self, X: Matrix, y: ColumnVector, params: dict) -> None:
-        return super()._fit(X, y, params)
+    def fit(
+        self,
+        model: AbstractModel,
+        optimiser: ox.GradientTransformation = None,
+        n_optim_nits: int = 500,
+        compile_objective: bool = False,
+    ) -> dx.Distribution:
+        if not optimiser:
+            optimiser = ox.adam(learning_rate=0.01)
+            warnings.warn("No optimiser specified, using Adam with learning rate 0.01")
+        realisation_set = jnp.asarray(model.model_data.values)
+        mean = jnp.mean(realisation_set, axis=1)
+        variance = jnp.var(realisation_set, axis=1)
 
+        params = {"mean": mean, "variance": variance}
 
-class ConjugateGP(GPFlowModel):
-    def __init__(self, kernel: Kernel, name: str = "GPR") -> None:
-        super().__init__(kernel, name=name)
+        objective_fn = self.step_fn(realisation_set, negative=True)
+        if compile_objective:
+            objective_fn = jax.jit(objective_fn)
 
-    def _fit(self, X: Matrix, y: ColumnVector, params: dict):
-        self.model = GPR((X, y), kernel=self.kernel)
-        nits = params["optim_nits"]
-        Scipy().minimize(
-            self.model.training_loss,
-            self.model.trainable_variables,
-            options=dict(maxiter=nits),
-        )
+        opt_state = optimiser.init(params)
 
+        tr = trange(n_optim_nits)
+        for i in tr:
+            val, grads = jax.value_and_grad(objective_fn)(params)
+            updates, opt_state = optimiser.update(grads, opt_state)
+            params = ox.apply_updates(params, updates)
+            if i % 100 == 0:
+                tr.set_description(f"Objective: {val: .2f}")
+        return self.return_distribution(params)
 
-class SparseGP(GPFlowModel):
-    def __init__(self, kernel: Kernel, name: str = "Sparse GPR") -> None:
-        super().__init__(kernel, name=name)
-        self.Z = None
-        self.elbos = []
-
-    def _fit(self, X: Matrix, y: ColumnVector, params: dict) -> None:
-        # Define model
-        Z = self._constuct_inducing_locs(X, params["n_inducing"])
-        self.Z = Z
-        self.model = SGPR((X, y), kernel=self.kernel, inducing_variable=Z)
-
-        # Define optimiser
-        opt = tf.optimizers.Adam(learning_rate=params["learning_rate"])
-
-        # Compile loss fn.
-        @tf.function
-        def step():
-            opt.minimize(self.model.training_loss, self.model.trainable_variables)
-
-        # Run optimisation
-        tr = trange(params["optim_nits"])
-        for nit in tr:
-            step()
-            if nit % params["log_interval"] == 0:
-                elbo = -self.model.training_loss().numpy()
-                self.elbos.append(elbo)
-                tr.set_postfix({"ELBO": elbo})
-
-    def _constuct_inducing_locs(self, X: Matrix, n_inducing: int) -> InducingPoints:
-        Z = kmeans2(data=X, k=n_inducing, minit="points")[0]
-        return InducingPoints(Z)
+    def return_distribution(self, params):
+        return dx.MultivariateNormalDiag(params["mean"], params["variance"])
 
 
 class JointReconstruction(tf.Module):

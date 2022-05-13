@@ -3,8 +3,8 @@ import typing as tp
 import tensorflow as tf
 
 from .data import ModelCollection, ProcessModel
-from .weights import Weight
-from .models import Model
+from .weights import AbstractWeight
+from .models import AbstractModel
 
 
 class Ensemble:
@@ -21,6 +21,7 @@ class Ensemble:
         equality = [len(m) == len(self.observations) for m in self.models]
         return all(equality)
 
-    def fit(self, weighting_scheme: Weight) -> None:
-        for t in time_points:
-            weights = compute_weights(self.models, self.observations)
+    def fit(self, weighting_scheme: AbstractWeight) -> None:
+        pass
+        # for t in time_points:
+        #     weights = compute_weights(self.models, self.observations)
