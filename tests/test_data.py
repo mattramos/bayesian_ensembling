@@ -1,26 +1,113 @@
+from pydoc import cli
 import numpy as np
-from ensembles.data import Dataset
+import xarray as xr
 import pytest
 import ensembles
+from ensembles.data import ModelCollection, ProcessModel
+import pandas as pd
+import pytest
+
+def create_xarray_dataarray(n_dims):
+    realisation = np.arange(3)
+    time = pd.date_range('1960-01-01', periods=480, freq='M')
+    lat = np.arange(5)
+    lon = np.arange(4)
+
+    ds = xr.Dataset(
+        data_vars=dict(
+            val=(
+                ['realisation', 'time', 'lon', 'lat'],
+                np.random.rand(
+                    len(realisation),
+                    len(time),
+                    len(lon),
+                    len(lat)
+                )
+            )
+        ),
+        coords=dict(
+            realisation=(['realisation'], realisation),
+            time=(['time'], time),
+            lon=(['lon'], lon),
+            lat=(['lat'], lat),
+        )
+    )
+
+    if n_dims == 1:
+        return ds.val.isel(lat=0, lon=0).drop_vars(['lat', 'lon'])
+    elif n_dims == 2:
+        return ds.val.isel(lat=0,).drop_vars(['lat'])
+    elif n_dims == 3:
+        return ds.val
+
+@pytest.mark.parametrize('n_dims', [1,2,3])
+def test_process_model(n_dims):
+    # Check initialisation
+    data_array = create_xarray_dataarray(n_dims)
+    model = ProcessModel(data_array, 'model_name')
+
+    # Check dimensions are correct
+    assert model.model_data.ndim == n_dims + 1
+
+    # Check mean, std, max_val and min_val output size
+    assert model.model_mean.size == 1
+    assert model.model_std.size == 1
+    assert model.max_val.size == 1
+    assert model.min_val.size == 1
+
+    # Check standardisation
+    standardised_model = model.standardise_data()
+    assert standardised_model.model_mean == pytest.approx(0, 1e-6)
+    assert standardised_model.model_std == pytest.approx(1, 1e-6)
+    assert isinstance(standardised_model, ProcessModel)
+
+    # Check unstandardisation
+    unstandardised_model = standardised_model.unstandardise_data()
+    assert np.all(model.model_data == pytest.approx(unstandardised_model.model_data, 1e-6))
+    assert isinstance(unstandardised_model, ProcessModel)
+
+    # Check for climatology calculation for dates and given climatology
+    model_anomaly = model.calculate_anomaly()
+    climatology = model_anomaly.climatology
+    model_anomaly = model.calculate_anomaly(climatology=climatology)
+
+    assert model_anomaly.model_data.shape == model.model_data.shape
+
+    # Check looping through realisations
+    n_reals = 0
+    for realisation in model:
+        assert isinstance(realisation, xr.DataArray)
+        n_reals += 1
+    assert n_reals == model.n_realisations
+
+    model.plot()
+
+@pytest.mark.parametrize('n_dims', [1,2,3])
+@pytest.mark.parametrize('n_models', [1,2,3])
+def test_model_collection(n_dims, n_models):
+    models = []
+    for i in range(n_models):
+        data_array = create_xarray_dataarray(n_dims)
+        model = ProcessModel(data_array, 'model_name')
+        models.append(model)
+    model_collection = ModelCollection(models)
+
+    # Check dimension of properties
+    assert model_collection.max_val.size == 1
+    assert model_collection.min_val.size == 1
+    assert model_collection.number_of_models == n_models
+    assert len(model_collection.model_names) == n_models
+
+    # Check iterability
+    idx = 0
+    for model in model_collection:
+        assert isinstance(model, ProcessModel)
+        idx += 1
+    assert idx == n_models
+
+    # Check plotting
+    model_collection.plot_all()
+    model_collection.plot_grid()
 
 
-@pytest.mark.parametrize("n", [1, 2, 5, 10])
-@pytest.mark.parametrize("n_data", [1, 2, 5, 10])
-def test_dataset(n, n_data):
-    X = [np.random.randn(n, 2)] * n_data
-    y = np.random.randn(n, 1)
-    data = Dataset(X, y)
 
-    # Assert basic properties of the dataset object
-    assert data.n == n
-    assert len(data) == n
-    assert data.n_datasets == n_data
-
-    # Check an error will be raised if input/output datasets are of differing length
-    y_false = np.random.randn(n + 1, 1)
-    with pytest.raises(ValueError):
-        Dataset(X, y_false)
-
-    # Check an error will be raised if the input data is not a list
-    with pytest.raises(AssertionError):
-        Dataset(X[0], y)
