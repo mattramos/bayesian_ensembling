@@ -1,4 +1,5 @@
 from importlib.util import module_for_loader
+from turtle import pos
 import distrax
 import pandas as pd
 import jax.numpy as jnp
@@ -6,6 +7,8 @@ import tensorflow as tf
 import typing as tp
 from dataclasses import dataclass
 import numpy as np
+
+from ensembles.models import AbstractModel
 from .array_types import ColumnVector, Matrix
 from .plotters import _unique_legend, cmap, get_style_cycler
 import seaborn as sns
@@ -185,6 +188,11 @@ class ModelCollection:
             raise StopIteration  # Done iterating.
         return out
 
+    def fit(self, model: AbstractModel, **kwargs):
+        for process_model in self.models:
+            posterior = model.fit(process_model, **kwargs)
+            process_model.distribution = posterior
+
     @property
     def time(self) -> ColumnVector:
         return self.models[0].time
@@ -218,14 +226,19 @@ class ModelCollection:
     def distributions(self) -> tp.Dict[str, distrax.Distribution]:
         return {model.model_name: model.distribution for model in self.models}
 
-    def plot_all(self, ax: tp.Optional[tp.Any] = None, legend: bool = False, **kwargs) -> tp.Any:
+    def plot_all(
+        self, ax: tp.Optional[tp.Any] = None, legend: bool = False, one_color: str = None, **kwargs
+    ) -> tp.Any:
         if not ax:
             fig, ax = plt.subplots(figsize=(15, 7))
 
         ax.set_prop_cycle(get_style_cycler())
         for model in self:
             x = model.time
-            ax.plot(x, model.temporal_mean, alpha=0.5, label=model.model_name)
+            if one_color:
+                ax.plot(x, model.temporal_mean, alpha=0.3, color=one_color)
+            else:
+                ax.plot(x, model.temporal_mean, alpha=0.5, label=model.model_name)
         if legend:
             ax.legend(loc="best")
         return ax
