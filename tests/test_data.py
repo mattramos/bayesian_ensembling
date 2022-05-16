@@ -3,7 +3,7 @@ import numpy as np
 import xarray as xr
 import pytest
 import ensembles
-from ensembles.data import ProcessModel
+from ensembles.data import ModelCollection, ProcessModel
 import pandas as pd
 import pytest
 
@@ -76,12 +76,38 @@ def test_process_model(n_dims):
     # Check looping through realisations
     n_reals = 0
     for realisation in model:
+        assert isinstance(realisation, xr.DataArray)
         n_reals += 1
     assert n_reals == model.n_realisations
 
+    model.plot()
+
 @pytest.mark.parametrize('n_dims', [1,2,3])
 @pytest.mark.parametrize('n_models', [1,2,3])
-def test_model_collection(n_dims):
-    print()
+def test_model_collection(n_dims, n_models):
+    models = []
+    for i in range(n_models):
+        data_array = create_xarray_dataarray(n_dims)
+        model = ProcessModel(data_array, 'model_name')
+        models.append(model)
+    model_collection = ModelCollection(models)
+
+    # Check dimension of properties
+    assert model_collection.max_val.size == 1
+    assert model_collection.min_val.size == 1
+    assert model_collection.number_of_models == n_models
+    assert len(model_collection.model_names) == n_models
+
+    # Check iterability
+    idx = 0
+    for model in model_collection:
+        assert isinstance(model, ProcessModel)
+        idx += 1
+    assert idx == n_models
+
+    # Check plotting
+    model_collection.plot_all()
+    model_collection.plot_grid()
+
 
 

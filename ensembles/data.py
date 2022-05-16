@@ -26,6 +26,7 @@ class ProcessModel:
         self.model_mean = self.model_data.mean()
         self.model_std = self.model_data.std()
         # TODO: Do some check that time and real are in the data
+        # We want a specific order of coords (real, time, space) and we want specific names
 
         # Could guess the var name if a dataset is given
 
@@ -100,7 +101,7 @@ class ProcessModel:
             coord_names.remove('realisation')
             da = self.model_data.mean(coord_names)
         else:
-            da = self
+            da = self.model_data
         ax.set_prop_cycle(get_style_cycler())
         for real in da.realisation:
             ax.plot(x, da.sel(realisation=real), alpha=0.1, color='gray', label='Realisations', ls='-')
@@ -119,12 +120,29 @@ class ProcessModel:
         return self.model_data.std('realisation')
 
     @property
-    # TODO: Implement this in more than a time dimension...?
-    # TODO: Merge with Tom's as distribution
-    def as_multivariate_gaussian(self) -> distrax.Distribution:
-        raise NotImplementedError
-        L = jnp.linalg.cholesky(self.temporal_covariance + jnp.eye(self.n_observations) * 1e-8)
-        return distrax.MultivariateNormalTri(self.temporal_mean, L)
+    def ndim(self):
+        return self.model_data.ndim
+
+    # @property
+    # # TODO: Implement this in more than a time dimension...?
+    # # TODO: Merge with Tom's as distribution
+    # def as_multivariate_gaussian(self) -> distrax.Distribution:
+    #     if self.ndim > 2:
+    #         raise NotImplementedError, "No implementation for 3D data yet"
+    #     else:
+    #         L = np.linalg.cholesky(self.temporal_covariance + jnp.eye(self.n_observations) * 1e-8)
+    #         return distrax.MultivariateNormalTri(self.temporal_mean, L)
+
+    @property
+    def distribution(self) -> distrax.Distribution:
+        if self.ndim > 2:
+            raise NotImplementedError, "No implementation for 3D data yet"
+        else:
+            return self._distribution
+
+    @distribution.setter
+    def distribution(self, mvn: distrax.Distribution):
+        self._distribution = mvn
 
     def __len__(self) -> int:
         return self.n_realisations
@@ -161,11 +179,11 @@ class ModelCollection:
 
     @property
     def max_val(self) -> int:
-        return np.max([model.max for model in self.models])
+        return np.max([model.max_val for model in self.models])
 
     @property
     def min_val(self) -> int:
-        return np.min([model.max for model in self.models])
+        return np.min([model.min_val for model in self.models])
 
     # @property
     # def n_observations(self) -> int:
@@ -185,6 +203,9 @@ class ModelCollection:
     def __getitem__(self, item):
         return self.models[item]
 
+    def distributions(self) -> tp.Dict[str, distrax.Distribution]:
+        return {model.model_name: model.distribution for model in self.models}
+
     # TODO: tie in with whatever is decided above RE distributions
     # def multivariate_gaussian_set(self) -> tp.Dict[str, distrax.Distribution]:
     #     return {model.model_name: model.as_multivariate_gaussian for model in self.models}
@@ -198,7 +219,9 @@ class ModelCollection:
                 coord_names = [coord for coord in model.model_data.coords]
                 coord_names.remove('time')
                 da = model.model_data.mean(coord_names)
-                x = model.time
+            else:
+                da = model.model_data.mean('realisation')
+            x = model.time
             ax.plot(x, da, alpha=0.5, label=model.model_name)
         ax.legend(loc='best')
         fig.show()
@@ -225,7 +248,7 @@ class ModelCollection:
             
             ax.plot(x, model_mean, alpha=0.7, label=model.model_name, **args, zorder=10)
             
-            [ax.plot(x, real, alpha=0.1, color='gray', label='Realisations', zorder=0) for real in reals]
+            [ax.plot(x, real, alpha=0.1, color='gray', label='Realisations', zorder=1) for real in reals]
             ax.legend(loc='best')
             ax = _unique_legend(ax)
 
