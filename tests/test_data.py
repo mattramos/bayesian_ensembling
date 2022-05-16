@@ -108,6 +108,6 @@ def test_model_collection(n_dims, n_models):
     # Check plotting
     model_collection.plot_all()
     model_collection.plot_grid()
-
+    
 
 
