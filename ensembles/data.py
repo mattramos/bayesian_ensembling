@@ -118,10 +118,6 @@ class ProcessModel:
         return self.model_data.std('realisation')
 
     @property
-<<<<<<< HEAD
-    def distribution(self) -> distrax.Distribution:
-        return self._distribution
-=======
     def ndim(self):
         return self.model_data.ndim
 
@@ -141,7 +137,6 @@ class ProcessModel:
             raise NotImplementedError, "No implementation for 3D data yet"
         else:
             return self._distribution
->>>>>>> xarray update
 
     @distribution.setter
     def distribution(self, mvn: distrax.Distribution):
@@ -213,15 +208,9 @@ class ModelCollection:
     def distributions(self) -> tp.Dict[str, distrax.Distribution]:
         return {model.model_name: model.distribution for model in self.models}
 
-<<<<<<< HEAD
     def plot_all(self, ax: tp.Optional[tp.Any] = None, legend: bool = False, **kwargs) -> tp.Any:
         if not ax:
             fig, ax = plt.subplots(figsize=(15, 7))
-=======
-    # TODO: tie in with whatever is decided above RE distributions
-    # def multivariate_gaussian_set(self) -> tp.Dict[str, distrax.Distribution]:
-    #     return {model.model_name: model.as_multivariate_gaussian for model in self.models}
->>>>>>> xarray update
 
         ax.set_prop_cycle(get_style_cycler())
         for model in self:
