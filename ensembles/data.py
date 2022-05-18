@@ -1,46 +1,21 @@
-from importlib.util import module_for_loader
-from turtle import pos
+from copy import copy
 import distrax
-import pandas as pd
 import jax.numpy as jnp
-import tensorflow as tf
 import typing as tp
 from dataclasses import dataclass
 import numpy as np
-
-from ensembles.models import AbstractModel
-from .array_types import ColumnVector, Matrix
-from .plotters import _unique_legend, cmap, get_style_cycler
+from .array_types import ColumnVector
+from .plotters import _unique_legend, get_style_cycler
 import seaborn as sns
 import matplotlib.pyplot as plt
-import matplotlib as mpl
-
-
-@dataclass
-class Dataset:
-    Xs: tp.List[Matrix]
-    y: ColumnVector
-
-    def __post_init__(self):
-        assert isinstance(self.Xs, list), "Input data must be a list"
-        for dataset in self.Xs:
-            tf.debugging.assert_shapes([(dataset, ("N", "D")), (self.y, ("N", 1))])
-
-    @property
-    def n_datasets(self) -> int:
-        return len(self.Xs)
-
-    @property
-    def n(self) -> int:
-        return self.y.shape[0]
-
-    def __len__(self) -> int:
-        return self.y.shape[0]
+import xarray as xr
+import warnings
+sns.set_style('darkgrid')
 
 
 @dataclass
 class ProcessModel:
-    model_data: pd.DataFrame
+    model_data: xr.DataArray
     model_name: str
     idx: int = 0
     _distribution = None
@@ -49,106 +24,106 @@ class ProcessModel:
         self.model_mean = self.model_data.mean()
         self.model_std = self.model_data.std()
         self.climatology = None
-
-    @property
-    def realisations(self) -> jnp.DeviceArray:
-        assert "time" not in self.model_data.columns
-        return self.model_data.values
+        assert isinstance(self.model_data, xr.DataArray), 'Input must be xr.DataArray'
+        assert self.model_data.dims[0] == 'realisation'
+        # TODO: Do some check that time and real are in the data
+        # We want a specific order of coords (real, time, space) and we want specific names
 
     @property
     def max_val(self) -> int:
-        return np.max(self.model_data.values)
+        return self.model_data.max()
 
     @property
     def min_val(self) -> int:
-        return np.min(self.model_data.values)
+        return self.model_data.min()
 
     @property
     def n_observations(self) -> int:
+        raise NotImplementedError
         return self.model_data.shape[0]
 
     @property
     def n_realisations(self) -> int:
-        return self.model_data.shape[1]
+        return self.model_data.realisation.size
 
     @property
     def time(self) -> ColumnVector:
-        time = pd.DatetimeIndex(self.model_data.index)
+        time = self.model_data.time
         return time
 
-    def standardise_data(self) -> pd.DataFrame:
-        # TODO: Return a ProcessModel from here
-        # TODO: May have to think about standardising the data before/after climatology at the ensemble level.
-        return self.model_data.sub(self.model_mean).div(self.model_std)
+    def standardise_data(self):
+        name = self.model_name + ' standardised'
+        standardised_data = (self.model_data - self.model_mean) / self.model_std
+        standardised_model = ProcessModel(standardised_data , name)
+        assert not hasattr(self, 'original_mean'), "This data is already standardised!"
+        standardised_model.original_mean = self.model_mean
+        standardised_model.original_std = self.model_std
+        return standardised_model
 
-    def unstandardise_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        # TODO: Return a ProcessModel from here
-        return df.mul(self.model_std).add(self.model_mean)
+    def unstandardise_data(self):
+        assert hasattr(self, 'original_mean'), "This data is not standardised!"
+        name = self.model_name + ' unstandardised'
+        unstandardised_data = self.model_data * self.original_std + self.original_mean
+        unstandardised_model = ProcessModel(unstandardised_data , name)
+        return unstandardised_model
 
-    def calculate_anomaly(self, climatology=False):
+    def calculate_anomaly(self, climatology_dates=["1961-01-01", "1990-12-31"], climatology=False):
         # If a climatology is not specified, it calculates one and returns it
-        df_ = self.model_data.copy(deep=True)
+        da = self.model_data.copy(deep=True)
         if np.any(climatology) == False:
-            t0 = "1961-01-01"
-            t1 = "1990-31-12"
-            df_["month"] = [int(t.split("-")[1]) for t in df_.index]
-            clim_df = df_[np.logical_and(df_.index >= t0, df_.index <= t1)]
-            clim = clim_df.groupby(["month"]).mean().mean(axis=1).values
-            df_.drop(["month"], axis=1, inplace=True)
+            t0 = climatology_dates[0]
+            t1 = climatology_dates[1]
+            clim_years = da.sel(time=slice(t0, t1))
+            clim = clim_years.groupby('time.month').mean().mean('realisation')
         else:
             clim = climatology
-            assert clim.shape == (12,), "Climatology is the incorrect length (must be 12)"
-        clim_tot = np.tile(clim, len(df_) // 12).reshape(-1, 1)
-        df_ = df_ - clim_tot
+            assert clim.month.size == 12, 'Climatology is the incorrect length (must be 12)'
+        da_anom = da.groupby('time.month') - clim
+        da_anom = da_anom.drop_vars('month')
         # Save climatology
-        self.climatology = clim
-        anomaly_model = ProcessModel(df_, self.model_name)
+        anomaly_model = ProcessModel(da_anom, self.model_name + ' anomaly')
         anomaly_model.climatology = clim
 
         return anomaly_model
 
-    # def calculate_climatology(self) -> pd.DataFrame:
-    #     # TODO: Return a ProcessModel from here
-    #     # TODO: Matt to tidy this up
-    #     df = self.model_data.copy(deep=True)
-    #     t0 = "1961-01-01"
-    #     t1 = "1990-31-12"
-    #     df["month"] = [int(t.split("-")[1]) for t in df.index]
-    #     for col in df.columns[:-1]:
-    #         clim_df = df[[col, "month"]][np.logical_and(df.index >= t0, df.index <= t1)]
-    #         clim = clim_df.groupby(["month"]).mean()[col].values
-    #         clim_tot = np.tile(clim, len(df) // 12)
-    #         df[col] = df[col] - clim_tot
-    #     df.drop(["month"], axis=1, inplace=True)
-    #     return df
-
-    def plot(self, ax: tp.Optional[tp.Any] = None, **kwargs) -> tp.Any:
-        # TODO: Write some plotting code here.
-        if not ax:
-            fig, ax = plt.subplots(figsize=(12, 7))
-        x = self.time
+    def plot(self, **kwargs) -> tp.Any:
+        fig, ax = plt.subplots(figsize=(12, 7))
+        x = self.model_data.time
+        if self.model_data.ndim > 2:
+            warnings.warn('Collapsing (mean) non-time dimensions for plotting')
+            coord_names = [coord for coord in self.model_data.coords]
+            coord_names.remove('time')
+            coord_names.remove('realisation')
+            da = self.model_data.mean(coord_names)
+        else:
+            da = self.model_data
         ax.set_prop_cycle(get_style_cycler())
-        ax.plot(x, self.realisations, alpha=0.1, color="gray", label="Realisations")
-        ax.plot(x, self.temporal_mean, label="Model mean", alpha=0.7)
-        ax.legend(loc="best")
+        for real in da.realisation:
+            ax.plot(x, da.sel(realisation=real), alpha=0.1, color='gray', label='Realisations', ls='-')
+        ax.plot(x, da.mean('realisation'), label='Model mean', alpha=0.7)
+        ax.legend(loc='best')
         ax = _unique_legend(ax)
         ax.set_title(self.model_name)
         return ax
 
     @property
-    def temporal_mean(self) -> jnp.DeviceArray:
-        model_vals = self.realisations
-        return jnp.mean(model_vals, axis=1)
+    def mean_across_realisations(self):
+        return self.model_data.mean('realisation')
 
     @property
-    def temporal_covariance(self) -> jnp.DeviceArray:
-        # TODO: Write shape checking unit test for this.
-        model_vals = self.realisations
-        return jnp.cov(model_vals)
+    def std_across_realisations(self):
+        return self.model_data.std('realisation')
+
+    @property
+    def ndim(self):
+        return self.model_data.ndim
 
     @property
     def distribution(self) -> distrax.Distribution:
-        return self._distribution
+        if self.ndim > 2:
+            raise NotImplementedError("No implementation for 3D data yet")
+        else:
+            return self._distribution
 
     @distribution.setter
     def distribution(self, mvn: distrax.Distribution):
@@ -162,7 +137,7 @@ class ProcessModel:
 
     def __next__(self):
         try:
-            out = self.realisations[:, self.idx]
+            out = self.model_data.isel(realisation=self.idx)
             self.idx += 1
         except IndexError:
             self.idx = 0
@@ -175,11 +150,14 @@ class ModelCollection:
     models: tp.List[ProcessModel]
     idx: int = 0
 
+    def __post_init__(self):
+        self.check_time_axes()
+
+
     def __iter__(self):
         return self
 
     def __next__(self):
-        # TODO: Check this after MA change
         try:
             out = self.models[self.idx]
             self.idx += 1
@@ -199,15 +177,15 @@ class ModelCollection:
 
     @property
     def max_val(self) -> int:
-        return np.max([model.max for model in self.models])
+        return np.max([model.max_val for model in self.models])
 
     @property
     def min_val(self) -> int:
-        return np.min([model.max for model in self.models])
+        return np.min([model.min_val for model in self.models])
 
-    @property
-    def n_observations(self) -> int:
-        return self.models[0].model_data.shape[0]
+    # @property
+    # def n_observations(self) -> int:
+    #     return self.models[0].model_data.shape[0]
 
     @property
     def number_of_models(self):
@@ -234,7 +212,15 @@ class ModelCollection:
 
         ax.set_prop_cycle(get_style_cycler())
         for model in self:
+            if model.ndim > 2:
+                warnings.warn('Collapsing (mean) non-time dimensions for plotting')
+                coord_names = [coord for coord in model.model_data.coords]
+                coord_names.remove('time')
+                da = model.model_data.mean(coord_names)
+            else:
+                da = model.model_data.mean('realisation')
             x = model.time
+
             if one_color:
                 ax.plot(x, model.temporal_mean, alpha=0.3, color=one_color)
             else:
@@ -242,6 +228,7 @@ class ModelCollection:
         if legend:
             ax.legend(loc="best")
         return ax
+
 
     def plot_grid(self, ax: tp.Optional[tp.Any] = None, **kwargs) -> tp.Any:
         style_cycler = get_style_cycler()
@@ -253,9 +240,21 @@ class ModelCollection:
         )
         for model, ax, args in zip(self, axes.ravel(), style_cycler):
             x = model.time
-            ax.plot(x, model.realisations, alpha=0.1, color="gray", label="Realisations")
-            ax.plot(x, model.temporal_mean, alpha=0.7, label=model.model_name, **args)
-            ax.legend(loc="best")
+            if model.model_data.ndim > 2:
+                warnings.warn('Collapsing (mean) non-time dimensions for plotting')
+                coord_names = [coord for coord in model.model_data.coords]
+                coord_names.remove('time')
+                model_mean = model.model_data.mean(coord_names)
+                coord_names.remove('realisation')
+                reals = [real.mean(coord_names) for real in model]
+            else:
+                reals = [real for real in model]
+                model_mean = model.mean_across_realisations
+            
+            ax.plot(x, model_mean, alpha=0.7, label=model.model_name, **args, zorder=10)
+            
+            [ax.plot(x, real, alpha=0.1, color='gray', label='Realisations', zorder=1) for real in reals]
+            ax.legend(loc='best')
             ax = _unique_legend(ax)
 
         fig.show()
@@ -267,3 +266,18 @@ class ModelCollection:
     @property
     def mean_stack(self) -> jnp.DeviceArray:
         return jnp.stack([model.distribution.mean() for model in self.models])
+
+    def check_time_axes(self):
+        time_axes_match = True
+        for model1 in self.models:
+            for model2 in self.models:
+                if np.any(model1.model_data.time.values != model2.model_data.time.values):
+                    time_axes_match = False
+        if time_axes_match == False:
+            warnings.warn("Time axes of models don't match: applying naive fix.")
+            new_time = self.time
+            for model in self:
+                model.model_data['time'] = new_time
+
+
+        return

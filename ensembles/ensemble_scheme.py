@@ -9,6 +9,7 @@ import numpy as np
 import ot
 import distrax
 import matplotlib.pyplot as plt
+import xarray as xr
 
 
 class AbstractEnsembleScheme:
@@ -34,14 +35,16 @@ class Barycentre(AbstractEnsembleScheme):
         super().__init__(name)
 
     @abc.abstractmethod
-    def _compute(self, process_models: ModelCollection, weights: np.ndarray) -> jnp.DeviceArray:
-
+    def _compute(self, process_models: ModelCollection, weights: xr.DataArray) -> jnp.DeviceArray:
+        if process_models[0].model_data.ndim > 2:
+             raise NotImplementedError('Not implemented for more than temporal dimensions')
+        
         mvns = process_models.distributions()
         # TODO: use jax for these loops
         # TODO: calculate sensible support limits
 
         pdfs_total = []
-        for t_idx in trange(process_models[0].n_observations):
+        for t_idx in trange(len(process_models[0].time)):
             means_t = []
             stds_t = []
             for name, mvn in mvns.items():
@@ -49,12 +52,12 @@ class Barycentre(AbstractEnsembleScheme):
                 std = jnp.sqrt(mvn.variance()[t_idx])
                 means_t.append(mean)
                 stds_t.append(std)
-            weight = np.array(weights[t_idx])
+            weight = np.asarray(weights.isel(time=t_idx).values)
             bary_mu, bary_std = gaussian_barycentre(np.asarray(means_t), np.asarray(stds_t), weight)
 
             pdfs_total.append(distrax.Normal(bary_mu, bary_std))
         # Still want the output to be an array of dists at the moment
-        self.distributions = pdfs_total
+        # No sensible way to xarray-ise this
         return np.asarray(pdfs_total)
 
     def plot(self, ax=None, x: jnp.DeviceArray = None):
@@ -83,9 +86,10 @@ class MultiModelMean(AbstractEnsembleScheme):
 
     @abc.abstractmethod
     def _compute(self, process_models: ModelCollection) -> jnp.DeviceArray:
-        all_model_values = np.concatenate([pm.model_data.values for pm in process_models], axis=1)
-        mean = np.mean(all_model_values, axis=1)
-        std = np.std(all_model_values, axis=1)
+        # TODO: Could write this for xarray?
+        all_model_values = np.concatenate([pm.model_data.values for pm in process_models], axis=0)
+        mean = np.mean(all_model_values, axis=0)
+        std = np.std(all_model_values, axis=0)
         return np.asarray([distrax.Normal(m, s) for m, s in zip(mean, std)])
 
 
@@ -94,19 +98,17 @@ class WeightedModelMean(AbstractEnsembleScheme):
         super().__init__(name)
 
     @abc.abstractmethod
-    def _compute(self, process_models: ModelCollection, weights: jnp.ndarray) -> jnp.DeviceArray:
-        assert np.logical_and(
-            weights.ndim == 1, weights.shape[0] == process_models.number_of_models
-        ), "Weights must be 1D and have the same length as the number of models"
+    def _compute(self, process_models: ModelCollection, weights: xr.DataArray) -> jnp.DeviceArray:
         weighted_mean = 0.0
         weighted_var = 0.0
 
-        for weight, model in zip(weights, process_models):
-            model_mean = model.temporal_mean
-            model_var = model.temporal_covariance.diagonal()
+        for model in process_models:
+            weight = weights.sel(model=model.model_name)
+            model_mean = model.mean_across_realisations
+            model_var = model.std_across_realisations ** 2
             weighted_var += model_var * (weight ** 2)
             weighted_mean += model_mean * weight
 
         return np.asarray(
-            [distrax.Normal(m, s) for m, s in zip(weighted_mean, jnp.power(weighted_var, 0.5))]
+            [distrax.Normal(m, s) for m, s in zip(weighted_mean.values, jnp.power(weighted_var.values, 0.5))]
         )
