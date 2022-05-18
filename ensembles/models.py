@@ -11,7 +11,6 @@ import jax
 import optax as ox
 import warnings
 
-from .data import ModelCollection
 from .array_types import ColumnVector, Matrix, Vector
 
 

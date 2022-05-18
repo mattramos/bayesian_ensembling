@@ -15,14 +15,19 @@ import xarray as xr
 class AbstractEnsembleScheme:
     def __init__(self, name: str) -> None:
         self.name = name
+        self.distributions = None
 
     @abc.abstractmethod
     # TODO define a union array type of jnp and np arrays
-    def _compute(self, process_models: ModelCollection) -> jnp.DeviceArray:
+    def _compute(
+        self, process_models: ModelCollection, weights: jnp.DeviceArray
+    ) -> jnp.DeviceArray:
         raise NotImplementedError
 
-    def __call__(self, process_models: ModelCollection, **kwargs) -> tp.Any:
-        return self._compute(process_models=process_models, **kwargs)
+    def __call__(
+        self, process_models: ModelCollection, weights: jnp.DeviceArray, **kwargs
+    ) -> tp.Any:
+        return self._compute(process_models=process_models, weights=weights, **kwargs)
 
 
 class Barycentre(AbstractEnsembleScheme):
@@ -54,6 +59,25 @@ class Barycentre(AbstractEnsembleScheme):
         # Still want the output to be an array of dists at the moment
         # No sensible way to xarray-ise this
         return np.asarray(pdfs_total)
+
+    def plot(self, ax=None, x: jnp.DeviceArray = None):
+        if not ax:
+            fig, ax = plt.subplots(figsize=(12, 5))
+        if x is None:
+            n_items = len(self.distributions)
+            x = jnp.arange(n_items)
+        means = jnp.asarray([e.mean() for e in self.distributions])
+        stddevs = jnp.asarray([e.stddev() for e in self.distributions])
+        ax.plot(x, means, label="Ensemble mean", color="tab:blue")
+        ax.fill_between(
+            x,
+            means - stddevs,
+            means + stddevs,
+            label="Ensemble one sigma",
+            color="tab:blue",
+            alpha=0.2,
+        )
+        return ax
 
 
 class MultiModelMean(AbstractEnsembleScheme):

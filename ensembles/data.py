@@ -166,6 +166,11 @@ class ModelCollection:
             raise StopIteration  # Done iterating.
         return out
 
+    def fit(self, model: AbstractModel, **kwargs):
+        for process_model in self.models:
+            posterior = model.fit(process_model, **kwargs)
+            process_model.distribution = posterior
+
     @property
     def time(self) -> ColumnVector:
         return self.models[0].time
@@ -199,7 +204,9 @@ class ModelCollection:
     def distributions(self) -> tp.Dict[str, distrax.Distribution]:
         return {model.model_name: model.distribution for model in self.models}
 
-    def plot_all(self, ax: tp.Optional[tp.Any] = False, legend: bool = False, **kwargs) -> tp.Any:
+    def plot_all(
+        self, ax: tp.Optional[tp.Any] = None, legend: bool = False, one_color: str = None, **kwargs
+    ) -> tp.Any:
         if not ax:
             fig, ax = plt.subplots(figsize=(15, 7))
 
@@ -213,9 +220,15 @@ class ModelCollection:
             else:
                 da = model.model_data.mean('realisation')
             x = model.time
-            ax.plot(x, da, alpha=0.5, label=model.model_name)
-        ax.legend(loc='best')
-        fig.show()
+
+            if one_color:
+                ax.plot(x, model.temporal_mean, alpha=0.3, color=one_color)
+            else:
+                ax.plot(x, model.temporal_mean, alpha=0.5, label=model.model_name)
+        if legend:
+            ax.legend(loc="best")
+        return ax
+
 
     def plot_grid(self, ax: tp.Optional[tp.Any] = None, **kwargs) -> tp.Any:
         style_cycler = get_style_cycler()
