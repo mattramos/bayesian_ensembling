@@ -1,3 +1,4 @@
+from copy import copy
 import distrax
 import jax.numpy as jnp
 import typing as tp
@@ -23,15 +24,10 @@ class ProcessModel:
         self.model_mean = self.model_data.mean()
         self.model_std = self.model_data.std()
         self.climatology = None
+        assert isinstance(self.model_data, xr.DataArray), 'Input must be xr.DataArray'
+        assert self.model_data.dims[0] == 'realisation'
         # TODO: Do some check that time and real are in the data
         # We want a specific order of coords (real, time, space) and we want specific names
-
-        # Could guess the var name if a dataset is given
-
-    # @property
-    # def realisations(self) -> jnp.DeviceArray:
-    #     assert "time" not in self.model_data.columns
-    #     return self.model_data.values
 
     @property
     def max_val(self) -> int:
@@ -83,6 +79,7 @@ class ProcessModel:
             clim = climatology
             assert clim.month.size == 12, 'Climatology is the incorrect length (must be 12)'
         da_anom = da.groupby('time.month') - clim
+        da_anom = da_anom.drop_vars('month')
         # Save climatology
         anomaly_model = ProcessModel(da_anom, self.model_name + ' anomaly')
         anomaly_model.climatology = clim
@@ -121,20 +118,10 @@ class ProcessModel:
     def ndim(self):
         return self.model_data.ndim
 
-    # @property
-    # # TODO: Implement this in more than a time dimension...?
-    # # TODO: Merge with Tom's as distribution
-    # def as_multivariate_gaussian(self) -> distrax.Distribution:
-    #     if self.ndim > 2:
-    #         raise NotImplementedError, "No implementation for 3D data yet"
-    #     else:
-    #         L = np.linalg.cholesky(self.temporal_covariance + jnp.eye(self.n_observations) * 1e-8)
-    #         return distrax.MultivariateNormalTri(self.temporal_mean, L)
-
     @property
     def distribution(self) -> distrax.Distribution:
         if self.ndim > 2:
-            raise NotImplementedError, "No implementation for 3D data yet"
+            raise NotImplementedError("No implementation for 3D data yet")
         else:
             return self._distribution
 
@@ -162,6 +149,10 @@ class ProcessModel:
 class ModelCollection:
     models: tp.List[ProcessModel]
     idx: int = 0
+
+    def __post_init__(self):
+        self.check_time_axes()
+
 
     def __iter__(self):
         return self
@@ -208,13 +199,13 @@ class ModelCollection:
     def distributions(self) -> tp.Dict[str, distrax.Distribution]:
         return {model.model_name: model.distribution for model in self.models}
 
-    def plot_all(self, ax: tp.Optional[tp.Any] = None, legend: bool = False, **kwargs) -> tp.Any:
+    def plot_all(self, ax: tp.Optional[tp.Any] = False, legend: bool = False, **kwargs) -> tp.Any:
         if not ax:
             fig, ax = plt.subplots(figsize=(15, 7))
 
         ax.set_prop_cycle(get_style_cycler())
         for model in self:
-            if model.model_data.ndim > 2:
+            if model.ndim > 2:
                 warnings.warn('Collapsing (mean) non-time dimensions for plotting')
                 coord_names = [coord for coord in model.model_data.coords]
                 coord_names.remove('time')
@@ -262,3 +253,18 @@ class ModelCollection:
     @property
     def mean_stack(self) -> jnp.DeviceArray:
         return jnp.stack([model.distribution.mean() for model in self.models])
+
+    def check_time_axes(self):
+        time_axes_match = True
+        for model1 in self.models:
+            for model2 in self.models:
+                if np.any(model1.model_data.time.values != model2.model_data.time.values):
+                    time_axes_match = False
+        if time_axes_match == False:
+            warnings.warn("Time axes of models don't match: applying naive fix.")
+            new_time = self.time
+            for model in self:
+                model.model_data['time'] = new_time
+
+
+        return

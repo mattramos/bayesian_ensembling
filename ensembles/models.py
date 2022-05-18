@@ -69,7 +69,7 @@ class MeanFieldApproximation:
         self.name = name
 
     def step_fn(self, samples: tf.Tensor, negative: bool = False) -> None:
-        obs = samples.T
+        obs = samples
         constant = jnp.array(-1.0) if negative else jnp.array(1.0)
 
         def step(params: dict):
@@ -91,9 +91,11 @@ class MeanFieldApproximation:
         if not optimiser:
             optimiser = ox.adam(learning_rate=0.01)
             warnings.warn("No optimiser specified, using Adam with learning rate 0.01")
+        if model.model_data.ndim > 2:
+             raise NotImplementedError('Not implemented for more than temporal dimensions')
         realisation_set = jnp.asarray(model.model_data.values)
-        mean = jnp.mean(realisation_set, axis=1)
-        variance = jnp.var(realisation_set, axis=1)
+        mean = jnp.mean(realisation_set, axis=0)
+        variance = jnp.var(realisation_set, axis=0)
 
         params = {"mean": mean, "variance": variance}
 
