@@ -85,7 +85,7 @@ class ProcessModel:
         # TODO: Return a ProcessModel from here
         return df.mul(self.model_std).add(self.model_mean)
 
-    def calculate_anomaly(self, climatology=False):
+    def calculate_anomaly(self, climatology=False, resample_freq=None):
         # If a climatology is not specified, it calculates one and returns it
         df_ = self.model_data.copy(deep=True)
         if np.any(climatology) == False:
@@ -102,6 +102,8 @@ class ProcessModel:
         df_ = df_ - clim_tot
         # Save climatology
         self.climatology = clim
+        if resample_freq:
+            df_ = df_.set_index(pd.DatetimeIndex(df_.index)).resample(resample_freq).mean()
         anomaly_model = ProcessModel(df_, self.model_name)
         anomaly_model.climatology = clim
 
@@ -238,7 +240,37 @@ class ModelCollection:
             if one_color:
                 ax.plot(x, model.temporal_mean, alpha=0.3, color=one_color)
             else:
-                ax.plot(x, model.temporal_mean, alpha=0.5, label=model.model_name)
+                ax.plot(x, model.temporal_mean, alpha=0.8, label=model.model_name)
+        if legend:
+            ax.legend(loc="best")
+        return ax
+
+    def plot_posteriors(
+        self, ax: tp.Optional[tp.Any] = None, legend: bool = False, one_color: str = None, **kwargs
+    ) -> tp.Any:
+        if not ax:
+            fig, ax = plt.subplots(figsize=(15, 7))
+
+        ax.set_prop_cycle(get_style_cycler())
+        x = self.models[0].time
+        for model_name, dist in self.distributions().items():
+            if one_color:
+                ax.plot(x, dist.mean(), alpha=0.3, color=one_color)
+                ax.fill_between(
+                    x,
+                    dist.mean() - dist.stddev(),
+                    dist.mean() + dist.stddev(),
+                    alpha=0.3,
+                    color=one_color,
+                )
+            else:
+                ax.plot(x, jnp.asarray(dist.mean()), alpha=0.3, label=model_name)
+                ax.fill_between(
+                    x,
+                    jnp.asarray(dist.mean()) - jnp.asarray(dist.stddev()),
+                    jnp.asarray(dist.mean()) + jnp.asarray(dist.stddev()),
+                    alpha=0.3,
+                )
         if legend:
             ax.legend(loc="best")
         return ax

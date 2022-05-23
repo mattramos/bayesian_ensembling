@@ -45,6 +45,10 @@ class Barycentre(AbstractEnsembleScheme):
             means_t = []
             stds_t = []
             for name, mvn in mvns.items():
+                if not mvn:
+                    raise AttributeError(
+                        f"No posterior for model {t_idx}. Please run model.fit() first."
+                    )
                 mean = mvn.mean()[t_idx]
                 std = jnp.sqrt(mvn.variance()[t_idx])
                 means_t.append(mean)
