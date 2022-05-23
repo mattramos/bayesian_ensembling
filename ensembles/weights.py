@@ -38,6 +38,8 @@ class LogLikelihoodWeight(AbstractWeight):
     ) -> jnp.DeviceArray:
         if process_models[0].model_data.ndim > 2:
              raise NotImplementedError('Not implemented for more than temporal dimensions')
+
+        assert np.all(process_models.time == observations.time), "Time coordinates do not match between models and observations"
         model_lls = []
         for model in process_models:
             distribution = model.distribution

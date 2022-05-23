@@ -10,7 +10,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import xarray as xr
 import warnings
-sns.set_style('darkgrid')
+from .models import AbstractModel
 
 
 @dataclass
@@ -67,7 +67,7 @@ class ProcessModel:
         unstandardised_model = ProcessModel(unstandardised_data , name)
         return unstandardised_model
 
-    def calculate_anomaly(self, climatology_dates=["1961-01-01", "1990-12-31"], climatology=False):
+    def calculate_anomaly(self, climatology_dates=["1961-01-01", "1990-12-31"], climatology=False, resample_freq=None):
         # If a climatology is not specified, it calculates one and returns it
         da = self.model_data.copy(deep=True)
         if np.any(climatology) == False:
@@ -80,6 +80,8 @@ class ProcessModel:
             assert clim.month.size == 12, 'Climatology is the incorrect length (must be 12)'
         da_anom = da.groupby('time.month') - clim
         da_anom = da_anom.drop_vars('month')
+        if resample_freq:
+            da_anom = da_anom.resample(time=resample_freq).mean()
         # Save climatology
         anomaly_model = ProcessModel(da_anom, self.model_name + ' anomaly')
         anomaly_model.climatology = clim
@@ -222,9 +224,9 @@ class ModelCollection:
             x = model.time
 
             if one_color:
-                ax.plot(x, model.temporal_mean, alpha=0.3, color=one_color)
+                ax.plot(x, da.values, alpha=0.3, color=one_color)
             else:
-                ax.plot(x, model.temporal_mean, alpha=0.5, label=model.model_name)
+                ax.plot(x, da.values, alpha=0.5, label=model.model_name)
         if legend:
             ax.legend(loc="best")
         return ax
