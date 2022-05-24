@@ -15,6 +15,15 @@ from .models import AbstractModel
 
 @dataclass
 class ProcessModel:
+    """Data class for handing the simulation output for a single process model.
+    
+    Args:
+        model_data (xr.DataArray): The input model data. Realisation must be the first dimension and time must be the second.
+        model_name (str): The model name. It should be unique to the model.
+
+    Returns:
+        ProcessModel: A data class for handling all the data for a singel process model.
+    """
     model_data: xr.DataArray
     model_name: str
     idx: int = 0
@@ -31,23 +40,52 @@ class ProcessModel:
 
     @property
     def max_val(self) -> int:
+        """Returns the maximum value of the process models output
+
+        Returns:
+            int: The maximum value
+        """
         return self.model_data.max()
 
     @property
     def min_val(self) -> int:
+        """Returns the minimum value of the process models output
+
+        Returns:
+            int: The minimum value
+        """
         return self.model_data.min()
 
     @property
     def n_observations(self) -> int:
+        """Returns the number of observation data points
+
+        Raises:
+            NotImplementedError: Currently not used as unsure of use in 3D case
+
+        Returns:
+            int: Number of observations
+        """
         raise NotImplementedError
         return self.model_data.shape[0]
 
     @property
     def n_realisations(self) -> int:
+        """Returns the number of realisations within the process model
+
+        Returns:
+            int: Number of realisations
+        """
         return self.model_data.realisation.size
 
     @property
-    def time(self) -> ColumnVector:
+    def time(self) -> xr.DataArray:
+        """Returns the time dimension which is useful for plotting and comparing to other models and observations. Note
+        this doesn't work for plotting with plt.fill_between(...). For this purpose, use ProcessModel.time.values.
+
+        Returns:
+            xr.DataArray: A data array object of the time dimension
+        """
         time = self.model_data.time
         return time
 
@@ -68,6 +106,16 @@ class ProcessModel:
         return unstandardised_model
 
     def calculate_anomaly(self, climatology_dates=["1961-01-01", "1990-12-31"], climatology=False, resample_freq=None):
+        """Calculates the anomaly of a model relative to a specified climatological period (default 1961-1990 to match HadCRUT data).
+
+        Args:
+            climatology_dates (list, optional): Contains the start and end dates of the climatological period. Format must be parseable by xarray.sel e.g. ["YYYY-MM-DD", "YYYY-MM-DD"]. Defaults to ["1961-01-01", "1990-12-31"].
+            climatology (xr.DataArray, optional): Use a precalculated climatology (e.g. ProcessModel.climatology). First dimension must be month. Defaults to False.
+            resample_freq (str, optional): The temporal frequency to resample the data to if desired e.g. 'Y' for yearly. Defaults to None.
+
+        Returns:
+            ProcessModel: The anomalised model data
+        """
         # If a climatology is not specified, it calculates one and returns it
         da = self.model_data.copy(deep=True)
         if np.any(climatology) == False:
@@ -89,6 +137,12 @@ class ProcessModel:
         return anomaly_model
 
     def plot(self, **kwargs) -> tp.Any:
+        """Plot the model data including mean and individual realisations.
+        If there are spatial dimensions, these are collapsed to a spatial mean for plotting.
+
+        Returns:
+            plt.ax: Current axis of the plot
+        """
         fig, ax = plt.subplots(figsize=(12, 7))
         x = self.model_data.time
         if self.model_data.ndim > 2:
@@ -110,18 +164,41 @@ class ProcessModel:
 
     @property
     def mean_across_realisations(self):
+        """Calcualte the model mean across the realisation axis
+
+        Returns:
+            xr.DataArray: The model averaged over realisations
+        """
         return self.model_data.mean('realisation')
 
     @property
     def std_across_realisations(self):
+        """Calcualte the model standard deviation across the realisation axis
+
+        Returns:
+            xr.DataArray: The model standard deviation
+        """
         return self.model_data.std('realisation')
 
     @property
     def ndim(self):
+        """The number of dimensions described by the model e.g. (realisation, time, lat) = 3 dimensions
+
+        Returns:
+            int: The number of dimensions.
+        """
         return self.model_data.ndim
 
     @property
     def distribution(self) -> distrax.Distribution:
+        """Returns the model posterior
+
+        Raises:
+            NotImplementedError: Not currenlty implemented for > 2 dimensions (i.e. realisation and time)
+
+        Returns:
+            distrax.Distribution: The model posterior
+        """
         if self.ndim > 2:
             raise NotImplementedError("No implementation for 3D data yet")
         else:
@@ -149,6 +226,15 @@ class ProcessModel:
 
 @dataclass
 class ModelCollection:
+    """A data class to collect together multiple ProcessModels. For example this class
+    could contain the surface temperature output for 10 different models. 
+
+    Args:
+        model_data (list): A list of ProcessModels.
+
+    Returns:
+        ModelCollection: _description_
+    """
     models: tp.List[ProcessModel]
     idx: int = 0
 
@@ -169,32 +255,59 @@ class ModelCollection:
         return out
 
     def fit(self, model: AbstractModel, **kwargs):
+        """A function to fit a statistical model to the process models within the ModelCollection, to learn the models' posteriors
+
+        Args:
+            model (AbstractModel): A statistical model, e.g. MeanFieldApproximation
+        """
         for process_model in self.models:
             posterior = model.fit(process_model, **kwargs)
             process_model.distribution = posterior
 
     @property
     def time(self) -> ColumnVector:
+        """Returns the time dimension which is useful for plotting and comparing to other models and observations. Note
+        this doesn't work for plotting with plt.fill_between(...). For this purpose, use ProcessModel.time.values.
+
+        Returns:
+            xr.DataArray: A data array object of the time dimension
+        """
         return self.models[0].time
 
     @property
     def max_val(self) -> int:
+        """Returns the maximum value of the the ModelCollection.
+
+        Returns:
+            int: The maximum value
+        """
         return np.max([model.max_val for model in self.models])
 
     @property
     def min_val(self) -> int:
-        return np.min([model.min_val for model in self.models])
+        """Returns the minimum value of the the ModelCollection.
 
-    # @property
-    # def n_observations(self) -> int:
-    #     return self.models[0].model_data.shape[0]
+        Returns:
+            int: The minimum value
+        """
+        return np.min([model.min_val for model in self.models])
 
     @property
     def number_of_models(self):
+        """Returns the number of models held within the ModelCollection
+
+        Returns:
+            int: Number of models
+        """
         return len(self.models)
 
     @property
     def model_names(self):
+        """Returns a list of model names within the ModelCollection
+
+        Returns:
+            list: Model names
+        """
         return [model.model_name for model in self.models]
 
     def __len__(self):
@@ -204,11 +317,27 @@ class ModelCollection:
         return self.models[item]
 
     def distributions(self) -> tp.Dict[str, distrax.Distribution]:
+        """ Returns a dictionary of model distributions (posteriors) where the keys 
+        to the dictionary are the model names
+
+        Returns:
+            tp.Dict[str, distrax.Distribution]: Dictionary of model distributions
+        """
         return {model.model_name: model.distribution for model in self.models}
 
     def plot_all(
         self, ax: tp.Optional[tp.Any] = None, legend: bool = False, one_color: str = None, **kwargs
     ) -> tp.Any:
+        """Plots all the models within the ModelCollection on one axes, without the individual realisations
+
+        Args:
+            ax (tp.Optional[plt.ax], optional): An axes to add the trace to. If not specified one is generated. Defaults to None.
+            legend (bool, optional): Boolean to toggle displaying the legend. Defaults to False.
+            one_color (str, optional): Color name e.g. 'tab:blue', specified if you want all the models to be plotted the same colour. Defaults to None.
+
+        Returns:
+            plt.ax: A matplotlib axis
+        """
         if not ax:
             fig, ax = plt.subplots(figsize=(15, 7))
 
@@ -232,7 +361,9 @@ class ModelCollection:
         return ax
 
 
-    def plot_grid(self, ax: tp.Optional[tp.Any] = None, **kwargs) -> tp.Any:
+    def plot_grid(self, **kwargs) -> tp.Any:
+        """Plots all the models within the ModelCollection on seperate axes (1 per model), with the individual realisations
+        """
         style_cycler = get_style_cycler()
         fig, axes = plt.subplots(
             figsize=(15, 4 * np.ceil(self.number_of_models / 3)),
@@ -261,25 +392,29 @@ class ModelCollection:
 
         fig.show()
 
-    @property
-    def covariance_stack(self) -> jnp.DeviceArray:
-        return jnp.stack([model.distribution.covariance() for model in self.models])
+    # Don't think we use these anymore MA: 24/5/22
+    # @property
+    # def covariance_stack(self) -> jnp.DeviceArray:
+    #     return jnp.stack([model.distribution.covariance() for model in self.models])
 
-    @property
-    def mean_stack(self) -> jnp.DeviceArray:
-        return jnp.stack([model.distribution.mean() for model in self.models])
+    # @property
+    # def mean_stack(self) -> jnp.DeviceArray:
+    #     return jnp.stack([model.distribution.mean() for model in self.models])
 
     def check_time_axes(self):
+        """ Helper function used when creating the ModelCollection to check that all model time coords are the same.
+        This avoids slight mismatches in time where models might use different calendars. Also fixes common issues
+        where the middle of the month might be represented either as the 15th or 16th day.
+        """
         time_axes_match = True
         for model1 in self.models:
             for model2 in self.models:
                 if np.any(model1.model_data.time.values != model2.model_data.time.values):
                     time_axes_match = False
         if time_axes_match == False:
-            warnings.warn("Time axes of models don't match: applying naive fix.")
+            warnings.warn("Time axes of models don't match: applying naive fix. Check models are collocated correctly in time!")
             new_time = self.time
             for model in self:
                 model.model_data['time'] = new_time
-
 
         return
