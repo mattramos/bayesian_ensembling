@@ -1,4 +1,5 @@
 from copy import copy
+from distutils import dist
 import distrax
 import jax.numpy as jnp
 import typing as tp
@@ -10,8 +11,100 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import xarray as xr
 import warnings
-from .models import AbstractModel
+# from .models import AbstractModel
+import distrax as dx
+import cartopy.crs as ccrs
+import jax.random as jr
+key = jr.PRNGKey(123)
 
+@dataclass
+class Distribution:
+    mu: np.array
+    covariance: np.array
+    dim_array: xr.DataArray
+    dist_type: dx.Distribution
+
+    def __post_init__(self):
+        self._dist = self.dist_type(self.mu, self.covariance)
+
+    def reshape(self, vals, name=False):
+        reshaped_vals = vals.reshape(self.dim_array.shape)
+        reshaped_array = self.dim_array.copy(data=reshaped_vals)
+        if name:
+            reshaped_array = reshaped_array.rename(name)
+        return reshaped_array
+
+    # TODO: Could add in xarray indexing args through an arg dict for xarray sel
+    def plot_temporally(self):
+        reshaped_mean = self.reshape(self._dist.mean(), name='Distribution mean')
+        reshaped_sigma = np.sqrt(self.reshape(self._dist.variance(), name='Variance mean'))
+        if reshaped_mean.ndim > 2:
+            warnings.warn('Collapsing (mean) non-time dimensions for plotting')
+            coord_names = [coord for coord in reshaped_mean.coords]
+            coord_names.remove('time')
+            reshaped_mean = reshaped_mean.mean(coord_names)
+            reshaped_sigma = reshaped_sigma.mean(coord_names)
+
+        mean = reshaped_mean.values
+        sig = reshaped_sigma.values
+        fig, ax = plt.subplots(figsize=(14, 7))
+        ax.fill_between(reshaped_mean.time.values, mean - sig, mean + sig, alpha=0.2, color='tab:blue')
+        ax.fill_between(reshaped_mean.time.values, mean - 2 * sig, mean + 2 * sig, alpha=0.2, color='tab:blue')
+        ax.fill_between(reshaped_mean.time.values, mean - 3 * sig, mean + 3 * sig, alpha=0.2, color='tab:blue')
+        ax.plot(reshaped_mean.time.values, mean, color='tab:blue', zorder=10)
+        fig.show()
+
+    def plot_spatially(self):
+        reshaped_mean = self.mean
+        reshaped_sigma = np.sqrt(self.variance)
+        # TODO: could add in area weighting into this
+        if 'time' in reshaped_mean.coords:
+            reshaped_mean = reshaped_mean.mean('time')
+            reshaped_sigma = reshaped_sigma.mean('time')
+            warnings.warn('Collapsing (mean) temporal dimensions for plotting')
+        mean = reshaped_mean
+        sig = reshaped_sigma
+        fig, axes = plt.subplots(
+            nrows=1, ncols=2, figsize=(12, 7),
+            subplot_kw=dict(projection=ccrs.Robinson()))
+        mean.plot(ax=axes[0], cbar_kwargs={"orientation": "horizontal"}, transform=ccrs.PlateCarree())
+        sig.plot(ax=axes[1], cbar_kwargs={"orientation": "horizontal"}, transform=ccrs.PlateCarree())
+        axes[0].coastlines()
+        axes[1].coastlines()
+        fig.tight_layout()
+        fig.show()
+
+    def plot(self, ax=None, **kwargs):
+        if not ax:
+            fig, ax = plt.subplots(figsize=(15, 7))
+
+        ax.set_prop_cycle(get_style_cycler())
+        mean = self.mean
+        var = self.variance
+        if mean.ndim > 1:
+            warnings.warn('Collapsing (mean) non-time dimensions for plotting')
+            coord_names = [coord for coord in mean.coords]
+            coord_names.remove('time')
+            mean = mean.mean(coord_names)
+            var = var.mean(coord_names)
+        x = mean.time.values
+        ax.fill_between(x, mean.values - np.sqrt(var.values), mean.values + np.sqrt(var.values), alpha=0.2, color='tab:blue')
+        ax.plot(x, mean.values, color='tab:blue')
+        return ax
+
+    @property
+    def mean(self):
+        return self.reshape(self._dist.mean(), name='Distribution mean')
+    
+    @property
+    def variance(self):
+        return self.reshape(self._dist.variance(), name='Distribution variance')
+
+    def sample(self):
+        samples = np.asarray(self._dist.sample(seed=np.random.randint(0, 110000)))
+        return self.reshape(samples, name='Distribution sample')
+
+    
 
 @dataclass
 class ProcessModel:
@@ -190,7 +283,7 @@ class ProcessModel:
         return self.model_data.ndim
 
     @property
-    def distribution(self) -> distrax.Distribution:
+    def distribution(self) -> Distribution:
         """Returns the model posterior
 
         Raises:
@@ -199,14 +292,11 @@ class ProcessModel:
         Returns:
             distrax.Distribution: The model posterior
         """
-        if self.ndim > 2:
-            raise NotImplementedError("No implementation for 3D data yet")
-        else:
-            return self._distribution
+        return self._distribution
 
     @distribution.setter
-    def distribution(self, mvn: distrax.Distribution):
-        self._distribution = mvn
+    def distribution(self, dist: Distribution):
+        self._distribution = dist
 
     def __len__(self) -> int:
         return self.n_realisations
@@ -254,15 +344,17 @@ class ModelCollection:
             raise StopIteration  # Done iterating.
         return out
 
-    def fit(self, model: AbstractModel, **kwargs):
+    def fit(self, model, **kwargs):
         """A function to fit a statistical model to the process models within the ModelCollection, to learn the models' posteriors
 
         Args:
             model (AbstractModel): A statistical model, e.g. MeanFieldApproximation
         """
         for process_model in self.models:
-            posterior = model.fit(process_model, **kwargs)
-            process_model.distribution = posterior
+            if process_model.distribution != None:
+                warnings.warn("Removing the model's previously learnt distribution")
+            dist = model.fit(process_model, **kwargs)
+            process_model.distribution = dist
 
     @property
     def time(self) -> ColumnVector:
@@ -316,7 +408,7 @@ class ModelCollection:
     def __getitem__(self, item):
         return self.models[item]
 
-    def distributions(self) -> tp.Dict[str, distrax.Distribution]:
+    def distributions(self) -> tp.Dict[str, Distribution]:
         """ Returns a dictionary of model distributions (posteriors) where the keys 
         to the dictionary are the model names
 
