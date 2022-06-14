@@ -1,5 +1,6 @@
 import abc
 import typing as tp
+
 # from ensembles.data import Distribution
 from pytest import param
 
@@ -17,9 +18,9 @@ import warnings
 from tensorflow_probability.substrates.jax import bijectors as tfb
 from tslearn.barycenters import dtw_barycenter_averaging_subgradient
 from .array_types import ColumnVector, Matrix, Vector
-from ensembles import data as es_data # Trying to avoid circular imports
+from ensembles import data as es_data  # Trying to avoid circular imports
 import copy
-import xarray as xr 
+import xarray as xr
 import ensembles as es
 
 
@@ -46,7 +47,9 @@ class AbstractModel:
         tf.debugging.assert_shapes([(X, ("N", "D")), (X_transformed, ("N", "K"))])
         mu, sigma2 = self._predict(X, params)
         mu, sigma2 = self.untransform_outputs(mu, sigma2)
-        tf.debugging.assert_shapes([(X, ("N", "D")), (mu, ("N", "K")), (sigma2, ("N", "K"))])
+        tf.debugging.assert_shapes(
+            [(X, ("N", "D")), (mu, ("N", "K")), (sigma2, ("N", "K"))]
+        )
         return mu, sigma2
 
     def transform_X(self, X: Matrix, training: bool = True):
@@ -77,7 +80,7 @@ class MeanFieldApproximation:
         self.name = name
 
     def step_fn(self, samples: tf.Tensor, negative: bool = False) -> None:
-        obs = samples # Was transposed for the 1D example - TODO must check
+        obs = samples  # Was transposed for the 1D example - TODO must check
         constant = jnp.array(-1.0) if negative else jnp.array(1.0)
 
         def step(params: dict):
@@ -100,7 +103,9 @@ class MeanFieldApproximation:
             optimiser = ox.adam(learning_rate=0.01)
             warnings.warn("No optimiser specified, using Adam with learning rate 0.01")
 
-        realisation_set = jnp.asarray(model.model_data.values).reshape(model.n_realisations, -1)
+        realisation_set = jnp.asarray(model.model_data.values).reshape(
+            model.n_realisations, -1
+        )
         mean = jnp.mean(realisation_set, axis=0)
         variance = jnp.var(realisation_set, axis=0)
 
@@ -120,16 +125,16 @@ class MeanFieldApproximation:
             if i % 100 == 0:
                 tr.set_description(f"Objective: {val: .2f}")
 
-        blank_array = xr.ones_like(model.model_data[0].drop('realisation')) * np.nan
-        blank_array = blank_array.rename('blank')
+        blank_array = xr.ones_like(model.model_data[0].drop("realisation")) * np.nan
+        blank_array = blank_array.rename("blank")
 
         dist = es_data.Distribution(
-            mu=mean, covariance=variance, dim_array=blank_array,
-            dist_type=dx.Normal)
+            mu=mean, covariance=variance, dim_array=blank_array, dist_type=dx.Normal
+        )
         return dist
 
     # def return_distribution(self, params):
-        # return dx.MultivariateNormalDiag(params["mean"], params["variance"])
+    # return dx.MultivariateNormalDiag(params["mean"], params["variance"])
 
 
 # class FullRankApproximation:
@@ -235,9 +240,13 @@ class GPDTW1D:
         compile_objective: bool = False,
     ) -> es_data.Distribution:
         if model.model_data.ndim > 2:
-            raise NotImplementedError('Not implemented for more than temporal dimensions. Use GPDTW3D instead')
+            raise NotImplementedError(
+                "Not implemented for more than temporal dimensions. Use GPDTW3D instead"
+            )
         realisation_set = model.model_data.values
-        y_mean = dtw_barycenter_averaging_subgradient(realisation_set, max_iter=50, tol=1e-3)
+        y_mean = dtw_barycenter_averaging_subgradient(
+            realisation_set, max_iter=50, tol=1e-3
+        )
         y_var = np.var(realisation_set, axis=0).reshape(-1, 1)
         Y = np.concatenate([y_mean, y_var], axis=1)
 
@@ -246,7 +255,9 @@ class GPDTW1D:
 
         likelihood = _HeteroskedasticGaussian()
         kernel = gpf.kernels.Matern32()
-        gp_model = gpf.models.VGP((X, Y), kernel=kernel, likelihood=likelihood, num_latent_gps=1)
+        gp_model = gpf.models.VGP(
+            (X, Y), kernel=kernel, likelihood=likelihood, num_latent_gps=1
+        )
 
         natgrad = gpf.optimizers.NaturalGradient(gamma=0.5)
         adam = tf.optimizers.Adam(0.01)
@@ -274,12 +285,15 @@ class GPDTW1D:
         mu = mu.numpy().squeeze()
         cov = cov.numpy().squeeze()
         cov += np.diag(Y[:, 1])
-        blank_array = xr.ones_like(model.model_data[0].drop('realisation')) * np.nan
-        blank_array = blank_array.rename('blank')
+        blank_array = xr.ones_like(model.model_data[0].drop("realisation")) * np.nan
+        blank_array = blank_array.rename("blank")
 
         dist = es_data.Distribution(
-            mu=mu, covariance=cov, dim_array=blank_array,
-            dist_type=dx.MultivariateNormalFullCovariance)
+            mu=mu,
+            covariance=cov,
+            dim_array=blank_array,
+            dist_type=dx.MultivariateNormalFullCovariance,
+        )
         return dist
 
 
@@ -294,16 +308,24 @@ class GPDTW3D:
         compile_objective: bool = False,
     ) -> es_data.Distribution:
         if not model.model_data.ndim == 4:
-            raise NotImplementedError('This method is only implemented for 4 dimensions (realisation, time, latitude, longitude')
-        
+            raise NotImplementedError(
+                "This method is only implemented for 4 dimensions (realisation, time, latitude, longitude"
+            )
+
         ## Data prep
         # Check coordinate names
-        assert 'latitude' in model.model_data.coords, "There must be a latitude coordinate in the dataArray"
-        assert 'longitude' in model.model_data.coords, "There must be a longitude coordinate in the dataArray"
+        assert (
+            "latitude" in model.model_data.coords
+        ), "There must be a latitude coordinate in the dataArray"
+        assert (
+            "longitude" in model.model_data.coords
+        ), "There must be a longitude coordinate in the dataArray"
 
         # Check latitude is third dim
-        if np.where(np.asarray(model.model_data.dims) == 'latitude')[0][0] != 2:
-            raise IndexError('Coordinate order should be realisation, time, latitude, longitude')
+        if np.where(np.asarray(model.model_data.dims) == "latitude")[0][0] != 2:
+            raise IndexError(
+                "Coordinate order should be realisation, time, latitude, longitude"
+            )
 
         lats = model.model_data.latitude
         lons = model.model_data.longitude
@@ -314,22 +336,30 @@ class GPDTW3D:
         # Compute the DTW for every latitude and longitude
         for i, lat in enumerate(lats):
             for j, lon in enumerate(lons):
-                realisation_set = model.model_data.sel(latitude=lat, longitude=lon).values
-                y_mean = dtw_barycenter_averaging_subgradient(realisation_set, max_iter=50, tol=1e-3).squeeze()
+                realisation_set = model.model_data.sel(
+                    latitude=lat, longitude=lon
+                ).values
+                y_mean = dtw_barycenter_averaging_subgradient(
+                    realisation_set, max_iter=50, tol=1e-3
+                ).squeeze()
                 y_var = np.var(realisation_set, axis=0)
                 fitted_mean[:, i, j] = y_mean
                 fitted_var[:, i, j] = y_var
 
         # Put DTW output and variance into xarray DataArrays for dimension management
-        mean_array = copy.deepcopy(model.model_data.isel(realisation=0)).drop_vars('realisation')
+        mean_array = copy.deepcopy(model.model_data.isel(realisation=0)).drop_vars(
+            "realisation"
+        )
         mean_array.data = fitted_mean
-        var_array = copy.deepcopy(model.model_data.isel(realisation=0)).drop_vars('realisation')
+        var_array = copy.deepcopy(model.model_data.isel(realisation=0)).drop_vars(
+            "realisation"
+        )
         var_array.data = fitted_var
 
-        # Extend coordinates from 2D -> 3D for ease of fitting GP. 
+        # Extend coordinates from 2D -> 3D for ease of fitting GP.
         lon_grid, lat_grid = np.meshgrid(mean_array.longitude, mean_array.latitude)
-        x = np.cos(lat_grid * np.pi / 180)  * np.cos(lon_grid * np.pi / 180)
-        y = np.cos(lat_grid * np.pi / 180)  * np.sin(lon_grid * np.pi / 180)
+        x = np.cos(lat_grid * np.pi / 180) * np.cos(lon_grid * np.pi / 180)
+        y = np.cos(lat_grid * np.pi / 180) * np.sin(lon_grid * np.pi / 180)
         z = np.sin(mean_array.latitude.values * np.pi / 180)
 
         # Add in more desciptive time coordinates
@@ -341,21 +371,26 @@ class GPDTW3D:
 
         # Add these auxillary coordinates to the DataArray
         mean_array = mean_array.assign_coords(
-                        x=(["latitude", 'longitude'], x),
-                        y=(["latitude", 'longitude'], y),
-                        z=("latitude", z),
-                        t_cont=("time", t_cont),
-                        t_sin=("time", t_sin),
-                        t_cos=("time", t_cos),
-                        )
+            x=(["latitude", "longitude"], x),
+            y=(["latitude", "longitude"], y),
+            z=("latitude", z),
+            t_cont=("time", t_cont),
+            t_sin=("time", t_sin),
+            t_cos=("time", t_cos),
+        )
 
         # X includes (as a flattened array):
         #   - all of the above custom coords (x,y,z,t_cont,t_sin,t_cos)
-        #   - all of the realisations 
+        #   - all of the realisations
         X = np.concatenate(
-            [mean_array.to_dataframe().drop(mean_array.name, axis=1).values,
-            model.model_data.to_dataframe().tas.values.reshape(len(model.model_data.realisation), -1).T],
-            axis=1).astype(np.float64)
+            [
+                mean_array.to_dataframe().drop(mean_array.name, axis=1).values,
+                model.model_data.to_dataframe()
+                .tas.values.reshape(len(model.model_data.realisation), -1)
+                .T,
+            ],
+            axis=1,
+        ).astype(np.float64)
 
         # Y includes (as a flattened array):
         #   - The DTW fit
@@ -363,9 +398,10 @@ class GPDTW3D:
         Y = np.concatenate(
             [
                 mean_array.to_dataframe()[mean_array.name].values.reshape(-1, 1),
-                var_array.to_dataframe()[var_array.name].values.reshape(-1, 1)
+                var_array.to_dataframe()[var_array.name].values.reshape(-1, 1),
             ],
-            axis=1).astype(np.float64)
+            axis=1,
+        ).astype(np.float64)
 
         # Fit a GP to this data
         likelihood = _HeteroskedasticGaussian()
@@ -374,10 +410,14 @@ class GPDTW3D:
         time_kernel = gpf.kernels.Matern32(active_dims=[3, 4, 5])
         x_y_kernel = gpf.kernels.Matern32(active_dims=[0, 1])
         z_kernel = gpf.kernels.Matern32(active_dims=[2])
-        realisation_kernel = gpf.kernels.Matern32(active_dims=list(np.arange(6, 6 + model.n_realisations)))
+        realisation_kernel = gpf.kernels.Matern32(
+            active_dims=list(np.arange(6, 6 + model.n_realisations))
+        )
         kernel = time_kernel + x_y_kernel + z_kernel + realisation_kernel
 
-        gp_model = gpf.models.GPMC((X, Y), kernel=kernel, likelihood=likelihood, num_latent_gps=1)
+        gp_model = gpf.models.GPMC(
+            (X, Y), kernel=kernel, likelihood=likelihood, num_latent_gps=1
+        )
 
         adam = tf.optimizers.Adam(0.01)
         loss = tf.function(gp_model.training_loss)
@@ -392,19 +432,22 @@ class GPDTW3D:
                 l = loss().numpy()
                 tr.set_postfix({"loss": f"{l :.2f}"})
                 losses.append(l)
-        
+
         # Get fit output from GP
         mu, cov = gp_model.predict_f(X, full_cov=True, full_output_cov=False)
         mu = mu.numpy().squeeze()
         cov = cov.numpy().squeeze()
         cov += np.diag(Y[:, 1])
 
-        blank_array = xr.ones_like(model.model_data[0].drop('realisation')) * np.nan
-        blank_array = blank_array.rename('blank')
+        blank_array = xr.ones_like(model.model_data[0].drop("realisation")) * np.nan
+        blank_array = blank_array.rename("blank")
 
         dist = es_data.Distribution(
-            mu=mu, covariance=cov, dim_array=blank_array,
-            dist_type=dx.MultivariateNormalFullCovariance)
+            mu=mu,
+            covariance=cov,
+            dim_array=blank_array,
+            dist_type=dx.MultivariateNormalFullCovariance,
+        )
         return dist
 
 

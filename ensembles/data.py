@@ -11,11 +11,14 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import xarray as xr
 import warnings
+
 # from .models import AbstractModel
 import distrax as dx
 import cartopy.crs as ccrs
 import jax.random as jr
+
 key = jr.PRNGKey(123)
+
 
 @dataclass
 class Distribution:
@@ -36,39 +39,70 @@ class Distribution:
 
     # TODO: Could add in xarray indexing args through an arg dict for xarray sel
     def plot_temporally(self):
-        reshaped_mean = self.reshape(self._dist.mean(), name='Distribution mean')
-        reshaped_sigma = np.sqrt(self.reshape(self._dist.variance(), name='Variance mean'))
+        reshaped_mean = self.reshape(self._dist.mean(), name="Distribution mean")
+        reshaped_sigma = np.sqrt(
+            self.reshape(self._dist.variance(), name="Variance mean")
+        )
         if reshaped_mean.ndim > 2:
-            warnings.warn('Collapsing (mean) non-time dimensions for plotting')
+            warnings.warn("Collapsing (mean) non-time dimensions for plotting")
             coord_names = [coord for coord in reshaped_mean.coords]
-            coord_names.remove('time')
+            coord_names.remove("time")
             reshaped_mean = reshaped_mean.mean(coord_names)
             reshaped_sigma = reshaped_sigma.mean(coord_names)
 
         mean = reshaped_mean.values
         sig = reshaped_sigma.values
         fig, ax = plt.subplots(figsize=(14, 7))
-        ax.fill_between(reshaped_mean.time.values, mean - sig, mean + sig, alpha=0.2, color='tab:blue')
-        ax.fill_between(reshaped_mean.time.values, mean - 2 * sig, mean + 2 * sig, alpha=0.2, color='tab:blue')
-        ax.fill_between(reshaped_mean.time.values, mean - 3 * sig, mean + 3 * sig, alpha=0.2, color='tab:blue')
-        ax.plot(reshaped_mean.time.values, mean, color='tab:blue', zorder=10)
+        ax.fill_between(
+            reshaped_mean.time.values,
+            mean - sig,
+            mean + sig,
+            alpha=0.2,
+            color="tab:blue",
+        )
+        ax.fill_between(
+            reshaped_mean.time.values,
+            mean - 2 * sig,
+            mean + 2 * sig,
+            alpha=0.2,
+            color="tab:blue",
+        )
+        ax.fill_between(
+            reshaped_mean.time.values,
+            mean - 3 * sig,
+            mean + 3 * sig,
+            alpha=0.2,
+            color="tab:blue",
+        )
+        ax.plot(reshaped_mean.time.values, mean, color="tab:blue", zorder=10)
         fig.show()
 
     def plot_spatially(self):
         reshaped_mean = self.mean
         reshaped_sigma = np.sqrt(self.variance)
         # TODO: could add in area weighting into this
-        if 'time' in reshaped_mean.coords:
-            reshaped_mean = reshaped_mean.mean('time')
-            reshaped_sigma = reshaped_sigma.mean('time')
-            warnings.warn('Collapsing (mean) temporal dimensions for plotting')
+        if "time" in reshaped_mean.coords:
+            reshaped_mean = reshaped_mean.mean("time")
+            reshaped_sigma = reshaped_sigma.mean("time")
+            warnings.warn("Collapsing (mean) temporal dimensions for plotting")
         mean = reshaped_mean
         sig = reshaped_sigma
         fig, axes = plt.subplots(
-            nrows=1, ncols=2, figsize=(12, 7),
-            subplot_kw=dict(projection=ccrs.Robinson()))
-        mean.plot(ax=axes[0], cbar_kwargs={"orientation": "horizontal"}, transform=ccrs.PlateCarree())
-        sig.plot(ax=axes[1], cbar_kwargs={"orientation": "horizontal"}, transform=ccrs.PlateCarree())
+            nrows=1,
+            ncols=2,
+            figsize=(12, 7),
+            subplot_kw=dict(projection=ccrs.Robinson()),
+        )
+        mean.plot(
+            ax=axes[0],
+            cbar_kwargs={"orientation": "horizontal"},
+            transform=ccrs.PlateCarree(),
+        )
+        sig.plot(
+            ax=axes[1],
+            cbar_kwargs={"orientation": "horizontal"},
+            transform=ccrs.PlateCarree(),
+        )
         axes[0].coastlines()
         axes[1].coastlines()
         fig.tight_layout()
@@ -82,34 +116,39 @@ class Distribution:
         mean = self.mean
         var = self.variance
         if mean.ndim > 1:
-            warnings.warn('Collapsing (mean) non-time dimensions for plotting')
+            warnings.warn("Collapsing (mean) non-time dimensions for plotting")
             coord_names = [coord for coord in mean.coords]
-            coord_names.remove('time')
+            coord_names.remove("time")
             mean = mean.mean(coord_names)
             var = var.mean(coord_names)
         x = mean.time.values
-        ax.fill_between(x, mean.values - np.sqrt(var.values), mean.values + np.sqrt(var.values), alpha=0.2, color='tab:blue')
-        ax.plot(x, mean.values, color='tab:blue')
+        ax.fill_between(
+            x,
+            mean.values - np.sqrt(var.values),
+            mean.values + np.sqrt(var.values),
+            alpha=0.2,
+            color="tab:blue",
+        )
+        ax.plot(x, mean.values, color="tab:blue")
         return ax
 
     @property
     def mean(self):
-        return self.reshape(self._dist.mean(), name='Distribution mean')
-    
+        return self.reshape(self._dist.mean(), name="Distribution mean")
+
     @property
     def variance(self):
-        return self.reshape(self._dist.variance(), name='Distribution variance')
+        return self.reshape(self._dist.variance(), name="Distribution variance")
 
     def sample(self):
         samples = np.asarray(self._dist.sample(seed=np.random.randint(0, 110000)))
-        return self.reshape(samples, name='Distribution sample')
+        return self.reshape(samples, name="Distribution sample")
 
-    
 
 @dataclass
 class ProcessModel:
     """Data class for handing the simulation output for a single process model.
-    
+
     Args:
         model_data (xr.DataArray): The input model data. Realisation must be the first dimension and time must be the second.
         model_name (str): The model name. It should be unique to the model.
@@ -117,6 +156,7 @@ class ProcessModel:
     Returns:
         ProcessModel: A data class for handling all the data for a singel process model.
     """
+
     model_data: xr.DataArray
     model_name: str
     idx: int = 0
@@ -126,8 +166,8 @@ class ProcessModel:
         self.model_mean = self.model_data.mean()
         self.model_std = self.model_data.std()
         self.climatology = None
-        assert isinstance(self.model_data, xr.DataArray), 'Input must be xr.DataArray'
-        assert self.model_data.dims[0] == 'realisation'
+        assert isinstance(self.model_data, xr.DataArray), "Input must be xr.DataArray"
+        assert self.model_data.dims[0] == "realisation"
         # TODO: Do some check that time and real are in the data
         # We want a specific order of coords (real, time, space) and we want specific names
 
@@ -183,22 +223,27 @@ class ProcessModel:
         return time
 
     def standardise_data(self):
-        name = self.model_name + ' standardised'
+        name = self.model_name + " standardised"
         standardised_data = (self.model_data - self.model_mean) / self.model_std
-        standardised_model = ProcessModel(standardised_data , name)
-        assert not hasattr(self, 'original_mean'), "This data is already standardised!"
+        standardised_model = ProcessModel(standardised_data, name)
+        assert not hasattr(self, "original_mean"), "This data is already standardised!"
         standardised_model.original_mean = self.model_mean
         standardised_model.original_std = self.model_std
         return standardised_model
 
     def unstandardise_data(self):
-        assert hasattr(self, 'original_mean'), "This data is not standardised!"
-        name = self.model_name + ' unstandardised'
+        assert hasattr(self, "original_mean"), "This data is not standardised!"
+        name = self.model_name + " unstandardised"
         unstandardised_data = self.model_data * self.original_std + self.original_mean
-        unstandardised_model = ProcessModel(unstandardised_data , name)
+        unstandardised_model = ProcessModel(unstandardised_data, name)
         return unstandardised_model
 
-    def calculate_anomaly(self, climatology_dates=["1961-01-01", "1990-12-31"], climatology=False, resample_freq=None):
+    def calculate_anomaly(
+        self,
+        climatology_dates=["1961-01-01", "1990-12-31"],
+        climatology=False,
+        resample_freq=None,
+    ):
         """Calculates the anomaly of a model relative to a specified climatological period (default 1961-1990 to match HadCRUT data).
 
         Args:
@@ -215,16 +260,18 @@ class ProcessModel:
             t0 = climatology_dates[0]
             t1 = climatology_dates[1]
             clim_years = da.sel(time=slice(t0, t1))
-            clim = clim_years.groupby('time.month').mean().mean('realisation')
+            clim = clim_years.groupby("time.month").mean().mean("realisation")
         else:
             clim = climatology
-            assert clim.month.size == 12, 'Climatology is the incorrect length (must be 12)'
-        da_anom = da.groupby('time.month') - clim
-        da_anom = da_anom.drop_vars('month')
+            assert (
+                clim.month.size == 12
+            ), "Climatology is the incorrect length (must be 12)"
+        da_anom = da.groupby("time.month") - clim
+        da_anom = da_anom.drop_vars("month")
         if resample_freq:
             da_anom = da_anom.resample(time=resample_freq).mean()
         # Save climatology
-        anomaly_model = ProcessModel(da_anom, self.model_name + ' anomaly')
+        anomaly_model = ProcessModel(da_anom, self.model_name + " anomaly")
         anomaly_model.climatology = clim
 
         return anomaly_model
@@ -239,18 +286,25 @@ class ProcessModel:
         fig, ax = plt.subplots(figsize=(12, 7))
         x = self.model_data.time
         if self.model_data.ndim > 2:
-            warnings.warn('Collapsing (mean) non-time dimensions for plotting')
+            warnings.warn("Collapsing (mean) non-time dimensions for plotting")
             coord_names = [coord for coord in self.model_data.coords]
-            coord_names.remove('time')
-            coord_names.remove('realisation')
+            coord_names.remove("time")
+            coord_names.remove("realisation")
             da = self.model_data.mean(coord_names)
         else:
             da = self.model_data
         ax.set_prop_cycle(get_style_cycler())
         for real in da.realisation:
-            ax.plot(x, da.sel(realisation=real), alpha=0.1, color='gray', label='Realisations', ls='-')
-        ax.plot(x, da.mean('realisation'), label='Model mean', alpha=0.7)
-        ax.legend(loc='best')
+            ax.plot(
+                x,
+                da.sel(realisation=real),
+                alpha=0.1,
+                color="gray",
+                label="Realisations",
+                ls="-",
+            )
+        ax.plot(x, da.mean("realisation"), label="Model mean", alpha=0.7)
+        ax.legend(loc="best")
         ax = _unique_legend(ax)
         ax.set_title(self.model_name)
         return ax
@@ -262,7 +316,7 @@ class ProcessModel:
         Returns:
             xr.DataArray: The model averaged over realisations
         """
-        return self.model_data.mean('realisation')
+        return self.model_data.mean("realisation")
 
     @property
     def std_across_realisations(self):
@@ -271,7 +325,7 @@ class ProcessModel:
         Returns:
             xr.DataArray: The model standard deviation
         """
-        return self.model_data.std('realisation')
+        return self.model_data.std("realisation")
 
     @property
     def ndim(self):
@@ -317,7 +371,7 @@ class ProcessModel:
 @dataclass
 class ModelCollection:
     """A data class to collect together multiple ProcessModels. For example this class
-    could contain the surface temperature output for 10 different models. 
+    could contain the surface temperature output for 10 different models.
 
     Args:
         model_data (list): A list of ProcessModels.
@@ -325,12 +379,12 @@ class ModelCollection:
     Returns:
         ModelCollection: _description_
     """
+
     models: tp.List[ProcessModel]
     idx: int = 0
 
     def __post_init__(self):
         self.check_time_axes()
-
 
     def __iter__(self):
         return self
@@ -409,7 +463,7 @@ class ModelCollection:
         return self.models[item]
 
     def distributions(self) -> tp.Dict[str, Distribution]:
-        """ Returns a dictionary of model distributions (posteriors) where the keys 
+        """Returns a dictionary of model distributions (posteriors) where the keys
         to the dictionary are the model names
 
         Returns:
@@ -418,7 +472,11 @@ class ModelCollection:
         return {model.model_name: model.distribution for model in self.models}
 
     def plot_all(
-        self, ax: tp.Optional[tp.Any] = None, legend: bool = False, one_color: str = None, **kwargs
+        self,
+        ax: tp.Optional[tp.Any] = None,
+        legend: bool = False,
+        one_color: str = None,
+        **kwargs
     ) -> tp.Any:
         """Plots all the models within the ModelCollection on one axes, without the individual realisations
 
@@ -436,12 +494,12 @@ class ModelCollection:
         ax.set_prop_cycle(get_style_cycler())
         for model in self:
             if model.ndim > 2:
-                warnings.warn('Collapsing (mean) non-time dimensions for plotting')
+                warnings.warn("Collapsing (mean) non-time dimensions for plotting")
                 coord_names = [coord for coord in model.model_data.coords]
-                coord_names.remove('time')
+                coord_names.remove("time")
                 da = model.model_data.mean(coord_names)
             else:
-                da = model.model_data.mean('realisation')
+                da = model.model_data.mean("realisation")
             x = model.time
 
             if one_color:
@@ -452,10 +510,8 @@ class ModelCollection:
             ax.legend(loc="best")
         return ax
 
-
     def plot_grid(self, **kwargs) -> tp.Any:
-        """Plots all the models within the ModelCollection on seperate axes (1 per model), with the individual realisations
-        """
+        """Plots all the models within the ModelCollection on seperate axes (1 per model), with the individual realisations"""
         style_cycler = get_style_cycler()
         fig, axes = plt.subplots(
             figsize=(15, 4 * np.ceil(self.number_of_models / 3)),
@@ -466,20 +522,25 @@ class ModelCollection:
         for model, ax, args in zip(self, axes.ravel(), style_cycler):
             x = model.time
             if model.model_data.ndim > 2:
-                warnings.warn('Collapsing (mean) non-time dimensions for plotting')
+                warnings.warn("Collapsing (mean) non-time dimensions for plotting")
                 coord_names = [coord for coord in model.model_data.coords]
-                coord_names.remove('time')
+                coord_names.remove("time")
                 model_mean = model.model_data.mean(coord_names)
-                coord_names.remove('realisation')
+                coord_names.remove("realisation")
                 reals = [real.mean(coord_names) for real in model]
             else:
                 reals = [real for real in model]
                 model_mean = model.mean_across_realisations
-            
+
             ax.plot(x, model_mean, alpha=0.7, label=model.model_name, **args, zorder=10)
-            
-            [ax.plot(x, real, alpha=0.1, color='gray', label='Realisations', zorder=1) for real in reals]
-            ax.legend(loc='best')
+
+            [
+                ax.plot(
+                    x, real, alpha=0.1, color="gray", label="Realisations", zorder=1
+                )
+                for real in reals
+            ]
+            ax.legend(loc="best")
             ax = _unique_legend(ax)
 
         fig.show()
@@ -494,19 +555,23 @@ class ModelCollection:
     #     return jnp.stack([model.distribution.mean() for model in self.models])
 
     def check_time_axes(self):
-        """ Helper function used when creating the ModelCollection to check that all model time coords are the same.
+        """Helper function used when creating the ModelCollection to check that all model time coords are the same.
         This avoids slight mismatches in time where models might use different calendars. Also fixes common issues
         where the middle of the month might be represented either as the 15th or 16th day.
         """
         time_axes_match = True
         for model1 in self.models:
             for model2 in self.models:
-                if np.any(model1.model_data.time.values != model2.model_data.time.values):
+                if np.any(
+                    model1.model_data.time.values != model2.model_data.time.values
+                ):
                     time_axes_match = False
         if time_axes_match == False:
-            warnings.warn("Time axes of models don't match: applying naive fix. Check models are collocated correctly in time!")
+            warnings.warn(
+                "Time axes of models don't match: applying naive fix. Check models are collocated correctly in time!"
+            )
             new_time = self.time
             for model in self:
-                model.model_data['time'] = new_time
+                model.model_data["time"] = new_time
 
         return

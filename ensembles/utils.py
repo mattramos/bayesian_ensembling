@@ -30,7 +30,9 @@ def simulate_data(
     realisations = []
 
     for noise in noise_terms:
-        sample_y = latent_y.numpy() + rng.normal(loc=0.0, scale=noise, size=latent_y.numpy().shape)
+        sample_y = latent_y.numpy() + rng.normal(
+            loc=0.0, scale=noise, size=latent_y.numpy().shape
+        )
         realisations.append(sample_y)
     Y = np.asarray(realisations).T
     return X, latent_y, Y
