@@ -1,3 +1,4 @@
+from concurrent.futures import process
 from copy import copy
 from distutils import dist
 import distrax
@@ -168,6 +169,8 @@ class ProcessModel:
         self.climatology = None
         assert isinstance(self.model_data, xr.DataArray), "Input must be xr.DataArray"
         assert self.model_data.dims[0] == "realisation"
+
+        assert np.any(~np.isnan(self.model_data)), "Input data must not contain NaN"
         # TODO: Do some check that time and real are in the data
         # We want a specific order of coords (real, time, space) and we want specific names
 

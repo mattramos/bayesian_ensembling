@@ -46,6 +46,7 @@ class LogLikelihoodWeight(AbstractWeight):
         observations: ProcessModel,
         return_lls=False,
         standardisation_scheme="exp",
+        standardisation_constant=0.01,
     ) -> jnp.DeviceArray:
         # if process_models[0].model_data.ndim > 2:
         #      raise NotImplementedError('Not implemented for more than temporal dimensions')
@@ -76,7 +77,8 @@ class LogLikelihoodWeight(AbstractWeight):
             # TODO: Question about whether these should be done on the mean or on the individual log-likelihoods?
             if standardisation_scheme == "exp":
                 # Exponentially scales - enforces positivity
-                lls_mean = np.exp(lls_mean)
+                # But this adds an arbitrary constant...?
+                lls_mean = np.exp(standardisation_constant * lls_mean)
             # elif standardisation_scheme == 'min-max':
             #     # Scales everything from 0 to 1
             #     lls_mean = (lls_mean - np.nanmin(lls_mean)) / (np.nanmax(lls_mean) - np.nanmin(lls_mean))

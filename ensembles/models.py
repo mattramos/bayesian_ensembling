@@ -22,7 +22,9 @@ from ensembles import data as es_data  # Trying to avoid circular imports
 import copy
 import xarray as xr
 import ensembles as es
+import matplotlib.pyplot as plt
 
+# TODO: Need to think about adding standardisation to the GP methods
 
 class AbstractModel:
     def __init__(self, name: str = "Model") -> None:
@@ -137,71 +139,6 @@ class MeanFieldApproximation:
     # return dx.MultivariateNormalDiag(params["mean"], params["variance"])
 
 
-# class FullRankApproximation:
-#     def __init__(
-#         self,
-#         name="FullRankModel",
-#     ):
-#         self.name = name
-
-#     def step_fn(self, samples: tf.Tensor, negative: bool = False) -> None:
-#         obs = samples.T
-#         constant = jnp.array(-1.0) if negative else jnp.array(1.0)
-#         bij = tfb.FillScaleTriL()
-
-#         def step(params: dict):
-#             mu = params["mean"]
-#             Lvec = params["covariance"]
-#             L = bij.forward(Lvec)
-#             dist = dx.MultivariateNormalTri(mu, L)
-#             log_prob = jnp.sum(dist.log_prob(obs))
-#             return log_prob * constant
-
-#         return step
-
-#     def fit(
-#         self,
-#         model: AbstractModel,
-#         optimiser: ox.GradientTransformation = None,
-#         n_optim_nits: int = 500,
-#         compile_objective: bool = False,
-#     ) -> dx.Distribution:
-#         if not optimiser:
-#             optimiser = ox.adam(learning_rate=0.005)
-#             warnings.warn("No optimiser specified, using Adam with learning rate 0.005")
-#         if model.model_data.ndim > 2:
-#              raise NotImplementedError('Not implemented for more than temporal dimensions')
-#         realisation_set = jnp.asarray(model.model_data.values)
-#         mean = jnp.mean(realisation_set, axis=0)
-#         covariance = jnp.eye(mean.shape[0]).astype(jnp.float32)
-
-#         bij = tfb.FillScaleTriL()
-#         covariance = bij.inverse(covariance)
-
-#         params = {"mean": mean, "covariance": covariance}
-#         objective_fn = self.step_fn(realisation_set, negative=True)
-
-#         if compile_objective:
-#             objective_fn = jax.jit(objective_fn)
-
-#         opt_state = optimiser.init(params)
-
-#         tr = trange(n_optim_nits)
-#         for i in tr:
-
-#             val, grads = jax.value_and_grad(objective_fn)(params)
-#             updates, opt_state = optimiser.update(grads, opt_state)
-#             params = ox.apply_updates(params, updates)
-#             if i % 100 == 0:
-#                 tr.set_description(f"Objective: {val: .2f}")
-#         return self.return_distribution(params)
-
-#     def return_distribution(self, params):
-#         bij = tfb.FillScaleTriL()
-#         L = bij.forward(params["covariance"])
-#         return dx.MultivariateNormalTri(params["mean"], L)
-
-
 class _HeteroskedasticGaussian(gpf.likelihoods.Likelihood):
     def __init__(self, **kwargs):
         super().__init__(latent_dim=1, observation_dim=2, **kwargs)
@@ -238,6 +175,7 @@ class GPDTW1D:
         model: AbstractModel,
         n_optim_nits: int = 500,
         compile_objective: bool = False,
+        progress_bar: bool = True
     ) -> es_data.Distribution:
         if model.model_data.ndim > 2:
             raise NotImplementedError(
@@ -270,7 +208,10 @@ class GPDTW1D:
         else:
             loss = gp_model.training_loss
 
-        tr = trange(n_optim_nits)
+        if progress_bar:
+            tr = trange(n_optim_nits)
+        else:
+            tr = range(n_optim_nits)
         losses = []
 
         for i in tr:
@@ -278,7 +219,8 @@ class GPDTW1D:
             adam.minimize(loss, gp_model.trainable_variables)
             if i % 25 == 0:
                 l = loss().numpy()
-                tr.set_postfix({"loss": f"{l :.2f}"})
+                if progress_bar:
+                    tr.set_postfix({"loss": f"{l :.2f}"})
                 losses.append(l)
 
         mu, cov = gp_model.predict_f(X, full_cov=True, full_output_cov=False)
@@ -306,6 +248,7 @@ class GPDTW3D:
         model: AbstractModel,
         n_optim_nits: int = 500,
         compile_objective: bool = False,
+        plot_loss: bool = False,
     ) -> es_data.Distribution:
         if not model.model_data.ndim == 4:
             raise NotImplementedError(
@@ -365,9 +308,9 @@ class GPDTW3D:
         # Add in more desciptive time coordinates
         t_cont = np.arange(len(mean_array.time))
         t_cont = 2 * t_cont / np.max(t_cont) - 1
-        t_month = mean_array.time.dt.month.values
-        t_sin = np.sin(2 * np.pi * t_month / 12)
-        t_cos = np.cos(2 * np.pi * t_month / 12)
+        # t_month = mean_array.time.dt.month.values
+        # t_sin = np.sin(2 * np.pi * t_month / 12)
+        # t_cos = np.cos(2 * np.pi * t_month / 12)
 
         # Add these auxillary coordinates to the DataArray
         mean_array = mean_array.assign_coords(
@@ -375,10 +318,10 @@ class GPDTW3D:
             y=(["latitude", "longitude"], y),
             z=("latitude", z),
             t_cont=("time", t_cont),
-            t_sin=("time", t_sin),
-            t_cos=("time", t_cos),
+            # t_sin=("time", t_sin),
+            # t_cos=("time", t_cos),
         )
-
+        # TODO: Unhardcode this e.g. tas
         # X includes (as a flattened array):
         #   - all of the above custom coords (x,y,z,t_cont,t_sin,t_cos)
         #   - all of the realisations
@@ -403,42 +346,98 @@ class GPDTW3D:
             axis=1,
         ).astype(np.float64)
 
-        # Fit a GP to this data
-        likelihood = _HeteroskedasticGaussian()
+        # # Fit a GP to this data
+        # likelihood = _HeteroskedasticGaussian()
 
         # 4 kernels (1 for x,y space, 1 for latitude (z), 1 for time, 1 for the realisations)
-        time_kernel = gpf.kernels.Matern32(active_dims=[3, 4, 5])
+        time_kernel = gpf.kernels.Matern32(active_dims=[3])
         x_y_kernel = gpf.kernels.Matern32(active_dims=[0, 1])
         z_kernel = gpf.kernels.Matern32(active_dims=[2])
         realisation_kernel = gpf.kernels.Matern32(
-            active_dims=list(np.arange(6, 6 + model.n_realisations))
+            active_dims=list(np.arange(4, 4 + model.n_realisations))
         )
         kernel = time_kernel + x_y_kernel + z_kernel + realisation_kernel
 
-        gp_model = gpf.models.GPMC(
-            (X, Y), kernel=kernel, likelihood=likelihood, num_latent_gps=1
+        # gp_model = gpf.models.GPMC(
+        #     (X, Y), kernel=kernel, likelihood=likelihood, num_latent_gps=1
+        # )
+
+        ###
+
+        likelihood = _HeteroskedasticGaussian()
+
+        # We could minibatch: TICK
+        # Better inducing point selection : TICK
+        # Could compile : TICK
+        # Could use better kernels: TICK
+        # Could normalise the data?
+        n_inducing = 400
+        inducing_points = np.linspace(np.min(X, axis=0), X.max(axis=0), n_inducing)
+        gp_model = gpf.models.SVGP(
+            kernel=kernel,
+            likelihood=likelihood,
+            inducing_variable=inducing_points,
+            num_latent_gps=1
         )
 
+        minibatch_size = 500
+        train_dataset = tf.data.Dataset.from_tensor_slices((X, Y)).cache().prefetch(tf.data.AUTOTUNE).repeat().shuffle(len(X))
+        train_iter = iter(train_dataset.batch(minibatch_size))
+
+        training_loss = gp_model.training_loss_closure(train_iter, compile=True)  
+
         adam = tf.optimizers.Adam(0.01)
-        loss = tf.function(gp_model.training_loss)
+        natgrad = gpf.optimizers.NaturalGradient(gamma=0.5)
 
-        tr = tqdm.trange(n_optim_nits)
-        losses = []
+        gpf.utilities.set_trainable(gp_model.q_mu, False)
+        gpf.utilities.set_trainable(gp_model.q_sqrt, False)
 
-        # Fit GP in this loop
-        for i in tr:
-            adam.minimize(loss, gp_model.trainable_variables)
-            if i % 1 == 0:
-                l = loss().numpy()
-                tr.set_postfix({"loss": f"{l :.2f}"})
-                losses.append(l)
+        @tf.function
+        def optimization_step():
+            natgrad.minimize(training_loss, [(gp_model.q_mu, gp_model.q_sqrt)])
+            adam.minimize(training_loss, gp_model.trainable_variables)
+        logged_loss = []
+        tr = trange(n_optim_nits * (X.shape[0] // minibatch_size))
+        for step in tr:
+            optimization_step()
+            if step % 10 * (X.shape[0] // minibatch_size) == 0:
+                elbo = -training_loss().numpy()
+                logged_loss.append(elbo)
+                tr.set_postfix({"elbo": f"{elbo :.2f}"})
+
+        if plot_loss:
+            plt.figure()
+            plt.plot(logged_loss)
+            plt.ylabel("ELBO")
+            plt.show()
+
+        # if compile_objective:
+        #     loss = tf.function(gp_model.training_loss)
+        # else:
+        #     loss = gp_model.training_loss
+
+        # tr = trange(n_optim_nits)
+        # losses = []
+        # data = (X, Y)
+        # # Fit GP in this loop
+        # for i in tr:
+            
+        #     if i % 1 == 0:
+        #         l = gp_model.training_loss(data).numpy()
+        #         tr.set_postfix({"loss": f"{l :.2f}"})
+        #         losses.append(l)
 
         # Get fit output from GP
+        # # TODO: Low rank approximation?
+
+        # Batch predictions 
+        # BTTB matrix - or a list of blocks
         mu, cov = gp_model.predict_f(X, full_cov=True, full_output_cov=False)
         mu = mu.numpy().squeeze()
         cov = cov.numpy().squeeze()
         cov += np.diag(Y[:, 1])
 
+        # Use some sparseness here otherwise xr will use too much memory
         blank_array = xr.ones_like(model.model_data[0].drop("realisation")) * np.nan
         blank_array = blank_array.rename("blank")
 
