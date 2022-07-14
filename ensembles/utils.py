@@ -62,9 +62,9 @@ class PerfectModelTest:
         """
 
         # Run the setup
-        hindcast_models.fit(model=self.emulate_method(), compile_objective=True, n_optim_nits=n_optim_nits, progress_bar=False)
-        forecast_models.fit(model=self.emulate_method(), compile_objective=True, n_optim_nits=n_optim_nits, progress_bar=False)
-        dist = self.emulate_method().fit(pseudo_observations_future, compile_objective=True, n_optim_nits=n_optim_nits, progress_bar=False)
+        hindcast_models.fit(model=self.emulate_method(), compile_objective=True, n_optim_nits=n_optim_nits)
+        forecast_models.fit(model=self.emulate_method(), compile_objective=True, n_optim_nits=n_optim_nits)
+        dist = self.emulate_method().fit(pseudo_observations_future, compile_objective=True, n_optim_nits=n_optim_nits)
         pseudo_observations_future.distribution = dist
         weight_function = self.weight_method()
         weights = weight_function(hindcast_models, pseudo_observations_past)
