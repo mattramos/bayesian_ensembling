@@ -64,16 +64,16 @@ def get_data(ssp_dir):
 for scenario in ['ssp119', 'ssp126', 'ssp245', 'ssp370', 'ssp434', 'ssp460', 'ssp585']:
     hindcast_models, forecast_models = get_data(f'./../experiments/data/gmst/{scenario}')
 
-    # Perform the perfect model test for MMM
-    pmt = PerfectModelTest(
-         hindcast_models=hindcast_models,
-         forecast_models=forecast_models,
-         emulate_method=es.MeanFieldApproximation,
-         weight_method=es.UniformWeight,
-         ensemble_method=es.MultiModelMean
-         )
+    # # Perform the perfect model test for MMM
+    # pmt = PerfectModelTest(
+    #      hindcast_models=hindcast_models,
+    #      forecast_models=forecast_models,
+    #      emulate_method=es.MeanFieldApproximation,
+    #      weight_method=es.UniformWeight,
+    #      ensemble_method=es.MultiModelMean
+    #      )
 
-    pmt.run(n_optim_nits=2000, save_file=f'results/perfect_model_test_mmm_{scenario}.csv')
+    # pmt.run(n_optim_nits=2000, save_file=f'results/perfect_model_test_mmm_{scenario}.csv')
 
     # Perform the perfect model test for Barycentre
     pmt = PerfectModelTest(
@@ -81,7 +81,8 @@ for scenario in ['ssp119', 'ssp126', 'ssp245', 'ssp370', 'ssp434', 'ssp460', 'ss
             forecast_models=forecast_models,
             emulate_method=es.GPDTW1D,
             weight_method=es.LogLikelihoodWeight,
-            ensemble_method=es.Barycentre
+            ensemble_method=es.Barycentre,
+            ssp=scenario
             )
 
     pmt.run(n_optim_nits=2000, save_file=f'results/perfect_model_test_barycentre_{scenario}.csv')

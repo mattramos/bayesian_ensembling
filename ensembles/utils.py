@@ -14,6 +14,8 @@ from .weights import AbstractWeight
 from .ensemble_scheme import AbstractEnsembleScheme
 import jax.numpy as jnp
 from ensembles.wasserstein import gaussian_w2_distance_distrax
+import matplotlib.pyplot as plt
+import distrax
 
 class PerfectModelTest:
     """Performs a perfect model test on the ensemble of models. This 
@@ -28,7 +30,8 @@ class PerfectModelTest:
             forecast_models: ModelCollection,
             emulate_method: AbstractModel,
             weight_method: AbstractWeight,
-            ensemble_method: AbstractEnsembleScheme
+            ensemble_method: AbstractEnsembleScheme,
+            ssp: str
             ):
         """Initialisation of the perfect model test.
 
@@ -44,6 +47,7 @@ class PerfectModelTest:
         self.emulate_method = emulate_method
         self.weight_method = weight_method
         self.ensemble_method = ensemble_method
+        self.ssp = ssp
 
     def _run_single_test(
             self,
@@ -73,18 +77,45 @@ class PerfectModelTest:
         ensemble_method = self.ensemble_method()
         barycentre = ensemble_method(forecast_models, weights_single)
 
-        # Validate it against set metrics
+        # Validate it against set metrics for bary
         # Average NLL across realisations
-        nll = - jnp.mean(barycentre._dist.log_prob(pseudo_observations_future.model_data.values))
+        nll_bary = - jnp.mean(barycentre._dist.log_prob(pseudo_observations_future.model_data.values))
         # Ths is the average RMSE across realisations
-        rmse = np.mean(np.sqrt(np.mean((barycentre.mean - pseudo_observations_future.model_data)**2, axis=0)).values)
+        rmse_bary = np.mean(np.sqrt(np.mean((barycentre.mean - pseudo_observations_future.model_data)**2, axis=0)).values)
         # #Wasserstein distance
         if hasattr(pseudo_observations_future.distribution._dist, 'covariance'): # Check if the distribution has variance or covariance
-            w2 = gaussian_w2_distance_distrax(barycentre._dist, pseudo_observations_future.distribution._dist, full_cov=True)
+            w2_bary = gaussian_w2_distance_distrax(barycentre._dist, pseudo_observations_future.distribution._dist, full_cov=True)
         else:
-            w2 = gaussian_w2_distance_distrax(barycentre._dist, pseudo_observations_future.distribution._dist, full_cov=False)
+            w2_bary = gaussian_w2_distance_distrax(barycentre._dist, pseudo_observations_future.distribution._dist, full_cov=False)
 
-        return nll, rmse, w2
+        # Calculate MMM and metrics for the ensemble
+        realisations = np.vstack([forecast_models[i].model_data.values for i in range(forecast_models.number_of_models)])
+        mmm_dist = distrax.Normal(np.mean(realisations, axis=0), np.var(realisations, axis=0))
+        nll_mmm = - jnp.mean(mmm_dist.log_prob(pseudo_observations_future.model_data.values))
+        # Ths is the average RMSE across realisations
+        rmse_mmm = np.mean(np.sqrt(np.mean((mmm_dist.mean() - pseudo_observations_future.model_data)**2, axis=0)).values)
+        # #Wasserstein distance
+        w2_mmm = gaussian_w2_distance_distrax(mmm_dist, pseudo_observations_future.distribution._dist, full_cov=False)
+
+
+        from ensembles.plotters import cmap
+        def plot_dist(dist, color='tab:blue', label='None', alpha=0.2, order=3):
+            plt.plot(dist.mean.time, dist.mean, color=color, label=label, zorder=order)
+            plt.fill_between(dist.mean.time.values, dist.mean - 2 * np.sqrt(dist.variance), dist.mean + 2 * np.sqrt(dist.variance), alpha=alpha, color=color, zorder=order-1, linewidth=0)
+
+        plt.figure(figsize=(6.5, 4))
+        plot_dist(barycentre, color=cmap()[0], label='Barycentre')
+        plot_dist(pseudo_observations_future.distribution, color=cmap()[1], label='True model')
+        plt.plot(barycentre.mean.time, mmm_dist.mean(), color=cmap()[2], label='MMM', zorder=3)
+        plt.fill_between(barycentre.mean.time.values, mmm_dist.mean() - 2 * np.sqrt(mmm_dist.variance()), mmm_dist.mean() + 2 * np.sqrt(mmm_dist.variance()), alpha=0.2, color=cmap()[2], zorder=2, linewidth=0)
+        plt.xlabel('Time')
+        plt.ylabel('Temperature anomally (°C) \n realitve to (1961-1990)')
+        plt.legend()
+
+        plt.savefig(f"/home/amosm1/bayesian_ensembling/experiments/figures/PMT/{pseudo_observations_future.model_name}_as_pseudo_truth_{self.ssp}.png")
+        plt.show()
+
+        return nll_bary, rmse_bary, w2_bary, nll_mmm, rmse_mmm, w2_mmm
 
 
     def run(self, n_optim_nits: int = 1000, save_file=False):
@@ -95,7 +126,7 @@ class PerfectModelTest:
             save_file (bool, optional): Path and file name to save results to. Defaults to False (not saving).
         """
 
-        df = pd.DataFrame(columns=['model as psuedo obs', 'nll', 'rmse', 'w2'])
+        df = pd.DataFrame(columns=['model as psuedo obs', 'nll_bary', 'rmse_bary', 'w2_bary', 'nll_mmm', 'rmse_mmm', 'w2_mmm'])
         n_models = self.hindcast_models.number_of_models
         for i in range(n_models):
             # Copy hindcast models and remove the pseudo observations
@@ -105,7 +136,7 @@ class PerfectModelTest:
             forecast_model_list = copy.deepcopy(self.forecast_models.models)
             pseudo_observations_future = forecast_model_list.pop(i)
             # Run the test
-            nll, rmse, w2 = self._run_single_test(
+            nll_bary, rmse_bary, w2_bary, nll_mmm, rmse_mmm, w2_mmm = self._run_single_test(
                 ModelCollection(hindcast_model_list),
                 ModelCollection(forecast_model_list),
                 pseudo_observations_past,
@@ -113,11 +144,14 @@ class PerfectModelTest:
                 n_optim_nits)
             df.loc[len(df.index)] = [
                 pseudo_observations_past.model_name,
-                nll,
-                rmse,
-                w2
+                nll_bary,
+                rmse_bary,
+                w2_bary,
+                nll_mmm,
+                rmse_mmm,
+                w2_mmm
             ]
-            print(f'With {pseudo_observations_past.model_name} as pseudo obs: NLL: {nll}, RMSE: {rmse}, W2: {w2}')
+            # print(f'With {pseudo_observations_past.model_name} as pseudo obs: NLL: {nll}, RMSE: {rmse}, W2: {w2}')
 
         if save_file:
             df.to_csv(save_file)

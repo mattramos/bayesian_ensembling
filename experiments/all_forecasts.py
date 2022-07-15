@@ -83,34 +83,34 @@ hist460_anom_models, ssp460_anom_models = load_model_data(ssp_dir='data/gmst/ssp
 hist585_anom_models, ssp585_anom_models = load_model_data(ssp_dir='data/gmst/ssp585')
 
 # Construct model posteriors
-print('hist119')
-hist119_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
-print('ssp119')
-ssp119_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
-print('hist126')
-hist126_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
-print('ssp126')
-ssp126_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
-print('hist245')
-hist245_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
-print('ssp245')
-ssp245_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
-print('hist370')
-hist370_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
-print('ssp370')
-ssp370_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
-print('hist434')
-hist434_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
-print('ssp434')
-ssp434_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
-print('hist460')
-hist460_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
-print('ssp460')
-ssp460_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
-print('hist585')
-hist585_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
-print('ssp585')
-ssp585_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000)
+
+hist119_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
+
+ssp119_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
+
+hist126_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
+
+ssp126_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
+
+hist245_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
+
+ssp245_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
+
+hist370_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
+
+ssp370_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
+
+hist434_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
+
+ssp434_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
+
+hist460_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
+
+ssp460_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
+
+hist585_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
+
+ssp585_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
 
 # Construct log likelihoods (weights) for each model
 weight_function = es.LogLikelihoodWeight()
@@ -142,6 +142,78 @@ ssp434_barycentre = ensemble_method(ssp434_anom_models, weights_434)
 ssp460_barycentre = ensemble_method(ssp460_anom_models, weights_460)
 ssp585_barycentre = ensemble_method(ssp585_anom_models, weights_585)
 
+# Save values of temp at 2050 - 1010
+upper = round((ssp119_barycentre.mean + 2 * np.sqrt(ssp119_barycentre.variance)).values[35], 3)
+mean = round(ssp119_barycentre.mean.values[35], 3)
+lower = round((ssp119_barycentre.mean - 2 * np.sqrt(ssp119_barycentre.variance)).values[35], 3)
+print(f'ssp119 mean at 2050: {mean} ({lower}-{upper}) 95% credible interval')
+
+upper = round((ssp119_barycentre.mean + 2 * np.sqrt(ssp119_barycentre.variance)).values[85], 3)
+mean = round(ssp119_barycentre.mean.values[85], 3)
+lower = round((ssp119_barycentre.mean - 2 * np.sqrt(ssp119_barycentre.variance)).values[85], 3)
+print(f'ssp119 mean at 2100: {mean} ({lower}-{upper}) 95% credible interval')
+
+upper = round((ssp126_barycentre.mean + 2 * np.sqrt(ssp126_barycentre.variance)).values[35], 3)
+mean = round(ssp126_barycentre.mean.values[35], 3)
+lower = round((ssp126_barycentre.mean - 2 * np.sqrt(ssp126_barycentre.variance)).values[35], 3)
+print(f'ssp126 mean at 2050: {mean} ({lower}-{upper}) 95% credible interval')
+
+upper = round((ssp126_barycentre.mean + 2 * np.sqrt(ssp126_barycentre.variance)).values[85], 3)
+mean = round(ssp126_barycentre.mean.values[85], 3)
+lower = round((ssp126_barycentre.mean - 2 * np.sqrt(ssp126_barycentre.variance)).values[85], 3)
+print(f'ssp126 mean at 2100: {mean} ({lower}-{upper}) 95% credible interval')
+
+upper = round((ssp245_barycentre.mean + 2 * np.sqrt(ssp245_barycentre.variance)).values[35], 3)
+mean = round(ssp245_barycentre.mean.values[35], 3)
+lower = round((ssp245_barycentre.mean - 2 * np.sqrt(ssp245_barycentre.variance)).values[35], 3)
+print(f'ssp245 mean at 2050: {mean} ({lower}-{upper}) 95% credible interval')
+
+upper = round((ssp245_barycentre.mean + 2 * np.sqrt(ssp245_barycentre.variance)).values[85], 3)
+mean = round(ssp245_barycentre.mean.values[85], 3)
+lower = round((ssp245_barycentre.mean - 2 * np.sqrt(ssp245_barycentre.variance)).values[85], 3)
+print(f'ssp245 mean at 2100: {mean} ({lower}-{upper}) 95% credible interval')
+
+upper = round((ssp370_barycentre.mean + 2 * np.sqrt(ssp370_barycentre.variance)).values[35], 3)
+mean = round(ssp370_barycentre.mean.values[35], 3)
+lower = round((ssp370_barycentre.mean - 2 * np.sqrt(ssp370_barycentre.variance)).values[35], 3)
+print(f'ssp370 mean at 2050: {mean} ({lower}-{upper}) 95% credible interval')
+
+upper = round((ssp370_barycentre.mean + 2 * np.sqrt(ssp370_barycentre.variance)).values[85], 3)
+mean = round(ssp370_barycentre.mean.values[85], 3)
+lower = round((ssp370_barycentre.mean - 2 * np.sqrt(ssp370_barycentre.variance)).values[85], 3)
+print(f'ssp370 mean at 2100: {mean} ({lower}-{upper}) 95% credible interval')
+
+upper = round((ssp434_barycentre.mean + 2 * np.sqrt(ssp434_barycentre.variance)).values[35], 3)
+mean = round(ssp434_barycentre.mean.values[35], 3)
+lower = round((ssp434_barycentre.mean - 2 * np.sqrt(ssp434_barycentre.variance)).values[35], 3)
+print(f'ssp434 mean at 2050: {mean} ({lower}-{upper}) 95% credible interval')
+
+upper = round((ssp434_barycentre.mean + 2 * np.sqrt(ssp434_barycentre.variance)).values[85], 3)
+mean = round(ssp434_barycentre.mean.values[85], 3)
+lower = round((ssp434_barycentre.mean - 2 * np.sqrt(ssp434_barycentre.variance)).values[85], 3)
+print(f'ssp434 mean at 2100: {mean} ({lower}-{upper}) 95% credible interval')
+
+upper = round((ssp460_barycentre.mean + 2 * np.sqrt(ssp460_barycentre.variance)).values[35], 3)
+mean = round(ssp460_barycentre.mean.values[35], 3)
+lower = round((ssp460_barycentre.mean - 2 * np.sqrt(ssp460_barycentre.variance)).values[35], 3)
+print(f'ssp460 mean at 2050: {mean} ({lower}-{upper}) 95% credible interval')
+
+upper = round((ssp460_barycentre.mean + 2 * np.sqrt(ssp460_barycentre.variance)).values[85], 3)
+mean = round(ssp460_barycentre.mean.values[85], 3)
+lower = round((ssp460_barycentre.mean - 2 * np.sqrt(ssp460_barycentre.variance)).values[85], 3)
+print(f'ssp460 mean at 2100: {mean} ({lower}-{upper}) 95% credible interval')
+
+upper = round((ssp585_barycentre.mean + 2 * np.sqrt(ssp585_barycentre.variance)).values[35], 3)
+mean = round(ssp585_barycentre.mean.values[35], 3)
+lower = round((ssp585_barycentre.mean - 2 * np.sqrt(ssp585_barycentre.variance)).values[35], 3)
+print(f'ssp585 mean at 2050: {mean} ({lower}-{upper}) 95% credible interval')
+
+upper = round((ssp585_barycentre.mean + 2 * np.sqrt(ssp585_barycentre.variance)).values[85], 3)
+mean = round(ssp585_barycentre.mean.values[85], 3)
+lower = round((ssp585_barycentre.mean - 2 * np.sqrt(ssp585_barycentre.variance)).values[85], 3)
+print(f'ssp585 mean at 2100: {mean} ({lower}-{upper}) 95% credible interval')
+
+
 # Plotting
 from ensembles.plotters import cmap
 
@@ -154,6 +226,73 @@ def plot_dist(dist, color='tab:blue', label='None', alpha=0.2, order=3):
 plt.rcParams['pdf.fonttype'] = 'truetype'
 
 plt.figure(figsize=(6.5, 4))
+plot_dist(ssp119_barycentre, color=cmap()[0], label='ssp119')
+plt.xlabel('Time')
+plt.ylabel('Temperature anomally (°C) \n realitve to (1961-1990)')
+plt.legend()
+sns.despine()
+plt.savefig("figures/ssp119_with_95percent_credible_interval.pdf")
+plt.show()
+
+
+plt.figure(figsize=(6.5, 4))
+plot_dist(ssp126_barycentre, color=cmap()[0], label='ssp126')
+plt.xlabel('Time')
+plt.ylabel('Temperature anomally (°C) \n realitve to (1961-1990)')
+plt.legend()
+sns.despine()
+plt.savefig("figures/ssp126_with_95percent_credible_interval.pdf")
+plt.show()
+
+plt.figure(figsize=(6.5, 4))
+plot_dist(ssp245_barycentre, color=cmap()[0], label='ssp245')
+plt.xlabel('Time')
+plt.ylabel('Temperature anomally (°C) \n realitve to (1961-1990)')
+plt.legend()
+sns.despine()
+plt.savefig("figures/ssp245_with_95percent_credible_interval.pdf")
+plt.show()
+
+
+plt.figure(figsize=(6.5, 4))
+plot_dist(ssp370_barycentre, color=cmap()[0], label='ssp370')
+plt.xlabel('Time')
+plt.ylabel('Temperature anomally (°C) \n realitve to (1961-1990)')
+plt.legend()
+sns.despine()
+plt.savefig("figures/ssp370_with_95percent_credible_interval.pdf")
+plt.show()
+
+
+plt.figure(figsize=(6.5, 4))
+plot_dist(ssp434_barycentre, color=cmap()[0], label='ssp434')
+plt.xlabel('Time')
+plt.ylabel('Temperature anomally (°C) \n realitve to (1961-1990)')
+plt.legend()
+sns.despine()
+plt.savefig("figures/ssp434_with_95percent_credible_interval.pdf")
+plt.show()
+
+
+plt.figure(figsize=(6.5, 4))
+plot_dist(ssp460_barycentre, color=cmap()[0], label='ssp460')
+plt.xlabel('Time')
+plt.ylabel('Temperature anomally (°C) \n realitve to (1961-1990)')
+plt.legend()
+sns.despine()
+plt.savefig("figures/ssp460_with_95percent_credible_interval.pdf")
+plt.show()
+
+plt.figure(figsize=(6.5, 4))
+plot_dist(ssp585_barycentre, color=cmap()[0], label='ssp585')
+plt.xlabel('Time')
+plt.ylabel('Temperature anomally (°C) \n realitve to (1961-1990)')
+plt.legend()
+sns.despine()
+plt.savefig("figures/ssp585_with_95percent_credible_interval.pdf")
+plt.show()
+
+plt.figure(figsize=(6.5, 4))
 labels = ['ssp245', 'ssp370', 'ssp585']
 for i, forecast in enumerate([ssp245_barycentre, ssp370_barycentre, ssp585_barycentre]):
     plot_dist(forecast, color=cmap()[i], label=labels[i])
@@ -163,75 +302,3 @@ plt.legend()
 sns.despine()
 plt.savefig("figures/figure1_with_95percent_credible_interval.pdf")
 plt.show()
-
-
-# Save values of temp at 200050 - 20002000
-upper = round((ssp119_barycentre.mean + 2 * np.sqrt(ssp119_barycentre.variance)).values[35], 3)
-mean = round(ssp119_barycentre.mean.values[35], 3)
-lower = round((ssp119_barycentre.mean - 2 * np.sqrt(ssp119_barycentre.variance)).values[35], 3)
-print(f'ssp119 mean at 200050: {mean} ({lower}-{upper}) 95% credible interval')
-
-upper = round((ssp119_barycentre.mean + 2 * np.sqrt(ssp119_barycentre.variance)).values[85], 3)
-mean = round(ssp119_barycentre.mean.values[85], 3)
-lower = round((ssp119_barycentre.mean - 2 * np.sqrt(ssp119_barycentre.variance)).values[85], 3)
-print(f'ssp119 mean at 220000: {mean} ({lower}-{upper}) 95% credible interval')
-
-upper = round((ssp126_barycentre.mean + 2 * np.sqrt(ssp126_barycentre.variance)).values[35], 3)
-mean = round(ssp126_barycentre.mean.values[35], 3)
-lower = round((ssp126_barycentre.mean - 2 * np.sqrt(ssp126_barycentre.variance)).values[35], 3)
-print(f'ssp126 mean at 200050: {mean} ({lower}-{upper}) 95% credible interval')
-
-upper = round((ssp126_barycentre.mean + 2 * np.sqrt(ssp126_barycentre.variance)).values[85], 3)
-mean = round(ssp126_barycentre.mean.values[85], 3)
-lower = round((ssp126_barycentre.mean - 2 * np.sqrt(ssp126_barycentre.variance)).values[85], 3)
-print(f'ssp126 mean at 220000: {mean} ({lower}-{upper}) 95% credible interval')
-
-upper = round((ssp245_barycentre.mean + 2 * np.sqrt(ssp245_barycentre.variance)).values[35], 3)
-mean = round(ssp245_barycentre.mean.values[35], 3)
-lower = round((ssp245_barycentre.mean - 2 * np.sqrt(ssp245_barycentre.variance)).values[35], 3)
-print(f'ssp245 mean at 200050: {mean} ({lower}-{upper}) 95% credible interval')
-
-upper = round((ssp245_barycentre.mean + 2 * np.sqrt(ssp245_barycentre.variance)).values[85], 3)
-mean = round(ssp245_barycentre.mean.values[85], 3)
-lower = round((ssp245_barycentre.mean - 2 * np.sqrt(ssp245_barycentre.variance)).values[85], 3)
-print(f'ssp245 mean at 220000: {mean} ({lower}-{upper}) 95% credible interval')
-
-upper = round((ssp370_barycentre.mean + 2 * np.sqrt(ssp370_barycentre.variance)).values[35], 3)
-mean = round(ssp370_barycentre.mean.values[35], 3)
-lower = round((ssp370_barycentre.mean - 2 * np.sqrt(ssp370_barycentre.variance)).values[35], 3)
-print(f'ssp370 mean at 200050: {mean} ({lower}-{upper}) 95% credible interval')
-
-upper = round((ssp370_barycentre.mean + 2 * np.sqrt(ssp370_barycentre.variance)).values[85], 3)
-mean = round(ssp370_barycentre.mean.values[85], 3)
-lower = round((ssp370_barycentre.mean - 2 * np.sqrt(ssp370_barycentre.variance)).values[85], 3)
-print(f'ssp370 mean at 220000: {mean} ({lower}-{upper}) 95% credible interval')
-
-upper = round((ssp434_barycentre.mean + 2 * np.sqrt(ssp434_barycentre.variance)).values[35], 3)
-mean = round(ssp434_barycentre.mean.values[35], 3)
-lower = round((ssp434_barycentre.mean - 2 * np.sqrt(ssp434_barycentre.variance)).values[35], 3)
-print(f'ssp434 mean at 200050: {mean} ({lower}-{upper}) 95% credible interval')
-
-upper = round((ssp434_barycentre.mean + 2 * np.sqrt(ssp434_barycentre.variance)).values[85], 3)
-mean = round(ssp434_barycentre.mean.values[85], 3)
-lower = round((ssp434_barycentre.mean - 2 * np.sqrt(ssp434_barycentre.variance)).values[85], 3)
-print(f'ssp434 mean at 220000: {mean} ({lower}-{upper}) 95% credible interval')
-
-upper = round((ssp460_barycentre.mean + 2 * np.sqrt(ssp460_barycentre.variance)).values[35], 3)
-mean = round(ssp460_barycentre.mean.values[35], 3)
-lower = round((ssp460_barycentre.mean - 2 * np.sqrt(ssp460_barycentre.variance)).values[35], 3)
-print(f'ssp460 mean at 200050: {mean} ({lower}-{upper}) 95% credible interval')
-
-upper = round((ssp460_barycentre.mean + 2 * np.sqrt(ssp460_barycentre.variance)).values[85], 3)
-mean = round(ssp460_barycentre.mean.values[85], 3)
-lower = round((ssp460_barycentre.mean - 2 * np.sqrt(ssp460_barycentre.variance)).values[85], 3)
-print(f'ssp460 mean at 220000: {mean} ({lower}-{upper}) 95% credible interval')
-
-upper = round((ssp585_barycentre.mean + 2 * np.sqrt(ssp585_barycentre.variance)).values[35], 3)
-mean = round(ssp585_barycentre.mean.values[35], 3)
-lower = round((ssp585_barycentre.mean - 2 * np.sqrt(ssp585_barycentre.variance)).values[35], 3)
-print(f'ssp585 mean at 200050: {mean} ({lower}-{upper}) 95% credible interval')
-
-upper = round((ssp585_barycentre.mean + 2 * np.sqrt(ssp585_barycentre.variance)).values[85], 3)
-mean = round(ssp585_barycentre.mean.values[85], 3)
-lower = round((ssp585_barycentre.mean - 2 * np.sqrt(ssp585_barycentre.variance)).values[85], 3)
-print(f'ssp585 mean at 220000: {mean} ({lower}-{upper}) 95% credible interval')
