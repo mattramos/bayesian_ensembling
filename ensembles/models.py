@@ -242,34 +242,9 @@ class GPDTW1D:
 class GPDTW3D:
     def __init__(self, name: str = "GP3DRegressor") -> None:
         self.name = name
+        warnings.warn('GPDTW3D is experimental and only supports annual data. Use with care!')
 
-    def fit(
-        self,
-        model: AbstractModel,
-        n_optim_nits: int = 500,
-        compile_objective: bool = False,
-        plot_loss: bool = False,
-    ) -> es_data.Distribution:
-        if not model.model_data.ndim == 4:
-            raise NotImplementedError(
-                "This method is only implemented for 4 dimensions (realisation, time, latitude, longitude"
-            )
-
-        ## Data prep
-        # Check coordinate names
-        assert (
-            "latitude" in model.model_data.coords
-        ), "There must be a latitude coordinate in the dataArray"
-        assert (
-            "longitude" in model.model_data.coords
-        ), "There must be a longitude coordinate in the dataArray"
-
-        # Check latitude is third dim
-        if np.where(np.asarray(model.model_data.dims) == "latitude")[0][0] != 2:
-            raise IndexError(
-                "Coordinate order should be realisation, time, latitude, longitude"
-            )
-
+    def _dtw_to_xarray(self, model: es_data.ProcessModel):
         lats = model.model_data.latitude
         lons = model.model_data.longitude
 
@@ -299,6 +274,14 @@ class GPDTW3D:
         )
         var_array.data = fitted_var
 
+        return mean_array, var_array
+
+    def _prep_data(
+        self,
+        model_data: xr.DataArray,
+        mean_array: xr.DataArray,
+        var_array: xr.DataArray):
+
         # Extend coordinates from 2D -> 3D for ease of fitting GP.
         lon_grid, lat_grid = np.meshgrid(mean_array.longitude, mean_array.latitude)
         x = np.cos(lat_grid * np.pi / 180) * np.cos(lon_grid * np.pi / 180)
@@ -308,9 +291,6 @@ class GPDTW3D:
         # Add in more desciptive time coordinates
         t_cont = np.arange(len(mean_array.time))
         t_cont = 2 * t_cont / np.max(t_cont) - 1
-        # t_month = mean_array.time.dt.month.values
-        # t_sin = np.sin(2 * np.pi * t_month / 12)
-        # t_cos = np.cos(2 * np.pi * t_month / 12)
 
         # Add these auxillary coordinates to the DataArray
         mean_array = mean_array.assign_coords(
@@ -318,18 +298,17 @@ class GPDTW3D:
             y=(["latitude", "longitude"], y),
             z=("latitude", z),
             t_cont=("time", t_cont),
-            # t_sin=("time", t_sin),
-            # t_cos=("time", t_cos),
         )
-        # TODO: Unhardcode this e.g. tas
+
         # X includes (as a flattened array):
         #   - all of the above custom coords (x,y,z,t_cont,t_sin,t_cos)
         #   - all of the realisations
+        var_name = model_data.name
         X = np.concatenate(
             [
                 mean_array.to_dataframe().drop(mean_array.name, axis=1).values,
-                model.model_data.to_dataframe()
-                .tas.values.reshape(len(model.model_data.realisation), -1)
+                (model_data.to_dataframe()[var_name])
+                .values.reshape(len(model_data.realisation), -1)
                 .T,
             ],
             axis=1,
@@ -346,9 +325,44 @@ class GPDTW3D:
             axis=1,
         ).astype(np.float64)
 
-        # # Fit a GP to this data
-        # likelihood = _HeteroskedasticGaussian()
+        return X, Y
 
+    def fit(
+        self,
+        model: AbstractModel,
+        n_optim_nits: int = 500,
+        n_inducing: int = 400,
+        compile_objective: bool = False,
+        minibatch_size: int = 500,
+        plot_loss: bool = False,
+    ) -> es_data.Distribution:
+        if not model.model_data.ndim == 4:
+            raise NotImplementedError(
+                "This method is only implemented for 4 dimensions (realisation, time, latitude, longitude"
+            )
+
+        ## Data prep
+        # Check coordinate names
+        assert (
+            "latitude" in model.model_data.coords
+        ), "There must be a latitude coordinate in the dataArray"
+        assert (
+            "longitude" in model.model_data.coords
+        ), "There must be a longitude coordinate in the dataArray"
+
+        # Check latitude is third dim
+        if np.where(np.asarray(model.model_data.dims) == "latitude")[0][0] != 2:
+            raise IndexError(
+                "Coordinate order should be realisation, time, latitude, longitude"
+            )
+
+        # Fit DTW
+        mean_array, var_array = self._dtw_to_xarray(model)
+
+        # Prepare data for GP
+        X, Y = self._prep_data(model.model_data, mean_array, var_array)
+
+        # Define kernels for GP
         # 4 kernels (1 for x,y space, 1 for latitude (z), 1 for time, 1 for the realisations)
         time_kernel = gpf.kernels.Matern32(active_dims=[3])
         x_y_kernel = gpf.kernels.Matern32(active_dims=[0, 1])
@@ -358,20 +372,10 @@ class GPDTW3D:
         )
         kernel = time_kernel + x_y_kernel + z_kernel + realisation_kernel
 
-        # gp_model = gpf.models.GPMC(
-        #     (X, Y), kernel=kernel, likelihood=likelihood, num_latent_gps=1
-        # )
-
-        ###
-
         likelihood = _HeteroskedasticGaussian()
 
-        # We could minibatch: TICK
-        # Better inducing point selection : TICK
-        # Could compile : TICK
-        # Could use better kernels: TICK
+        # Define the GP
         # Could normalise the data?
-        n_inducing = 400
         inducing_points = np.linspace(np.min(X, axis=0), X.max(axis=0), n_inducing)
         gp_model = gpf.models.SVGP(
             kernel=kernel,
@@ -380,18 +384,16 @@ class GPDTW3D:
             num_latent_gps=1
         )
 
-        minibatch_size = 500
+        # Create dataset and optimiser
         train_dataset = tf.data.Dataset.from_tensor_slices((X, Y)).cache().prefetch(tf.data.AUTOTUNE).repeat().shuffle(len(X))
         train_iter = iter(train_dataset.batch(minibatch_size))
-
         training_loss = gp_model.training_loss_closure(train_iter, compile=True)  
-
         adam = tf.optimizers.Adam(0.01)
         natgrad = gpf.optimizers.NaturalGradient(gamma=0.5)
-
         gpf.utilities.set_trainable(gp_model.q_mu, False)
         gpf.utilities.set_trainable(gp_model.q_sqrt, False)
 
+        # Optimise
         @tf.function
         def optimization_step():
             natgrad.minimize(training_loss, [(gp_model.q_mu, gp_model.q_sqrt)])
@@ -411,41 +413,22 @@ class GPDTW3D:
             plt.ylabel("ELBO")
             plt.show()
 
-        # if compile_objective:
-        #     loss = tf.function(gp_model.training_loss)
-        # else:
-        #     loss = gp_model.training_loss
-
-        # tr = trange(n_optim_nits)
-        # losses = []
-        # data = (X, Y)
-        # # Fit GP in this loop
-        # for i in tr:
-            
-        #     if i % 1 == 0:
-        #         l = gp_model.training_loss(data).numpy()
-        #         tr.set_postfix({"loss": f"{l :.2f}"})
-        #         losses.append(l)
-
-        # Get fit output from GP
-        # # TODO: Low rank approximation?
-
-        # Batch predictions 
-        # BTTB matrix - or a list of blocks
-        mu, cov = gp_model.predict_f(X, full_cov=True, full_output_cov=False)
+        # Get the posterior mean and covariance
+        mu, cov = gp_model.predict_f(X, full_cov=False, full_output_cov=False)
         mu = mu.numpy().squeeze()
         cov = cov.numpy().squeeze()
-        cov += np.diag(Y[:, 1])
+        cov += Y[:, 1]
 
         # Use some sparseness here otherwise xr will use too much memory
         blank_array = xr.ones_like(model.model_data[0].drop("realisation")) * np.nan
         blank_array = blank_array.rename("blank")
 
+        # Could explore using dx.MultivariateNormalDiagPlusLowRank here
         dist = es_data.Distribution(
             mu=mu,
             covariance=cov,
             dim_array=blank_array,
-            dist_type=dx.MultivariateNormalFullCovariance,
+            dist_type=dx.Normal,
         )
         return dist
 

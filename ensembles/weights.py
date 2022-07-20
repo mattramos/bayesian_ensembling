@@ -54,6 +54,7 @@ class LogLikelihoodWeight(AbstractWeight):
         assert np.all(
             process_models.time == observations.time
         ), "Time coordinates do not match between models and observations"
+        assert len(process_models.time) == len(observations.time), "Time coordinates do not match between models and observations"
         model_lls = []
         for model in process_models:
             distribution = model.distribution._dist
@@ -104,7 +105,6 @@ class LogLikelihoodWeight(AbstractWeight):
         # weights = model_lls / model_lls_sum_masked
 
         weights = weights.rename("Log-likelihood weights")
-
         assert weights.shape == (len(process_models),) + obs_real.shape
 
         if return_lls:
