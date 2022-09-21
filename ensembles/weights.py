@@ -15,7 +15,8 @@ from ensembles.wasserstein import gaussian_w2_distance_distrax
 import distrax as dx
 import warnings
 import jax
-from jax import lax 
+from jax import lax
+import properscoring as ps
 
 class AbstractWeight:
     def __init__(self, name: str) -> None:
@@ -61,13 +62,13 @@ class LogLikelihoodWeight(AbstractWeight):
         assert hasattr(process_models[0].distribution, '_dist'), "Distribution not defined - fit models first"
 
         model_lls = []
-        for model in process_models:
+        for model in tqdm(process_models):
             distribution = model.distribution._dist
             # Expand dims is needed to ensure that the log_prob returns one point per time point
             log_likelihood = lambda x: distribution.log_prob(x)
 
             lls = []
-            for obs_real in tqdm(observations):
+            for obs_real in observations:
                 # assert distribution.event_shape == obs_real.values.ravel().shape, 'Observations are not the same size as the model distribution'
                 # This is need because dx.Normal and dx.MultiVariate treat inputs differently
                 if model.distribution.dist_type == dx.Normal:
@@ -275,7 +276,7 @@ class ModelSimilarityWeight(AbstractWeight):
             raise ValueError('Mode must be "single", "spatial", or "temporal"')
 
         # Standardise the weights such that they sum to 1.
-        
+        weights_array = weights_array / weights_array.sum("model")
         
         return weights_array
 
@@ -379,6 +380,74 @@ class KSDWeight(AbstractWeight):
         ksd_weights = ksd_weights.rename("Kernel Stein Discrepancy weights")
 
         return ksd_weights
+
+
+class CRPSWeight(AbstractWeight):
+
+    def __init__(self, name: str = 'ContinuousRankedProbabilityScoreWeight') -> None:
+        super().__init__(name)
+
+    def _compute(
+        self,
+        process_models: ModelCollection,
+        observations: ProcessModel
+        ) -> xr.DataArray:
+
+
+        def crps_score(samples, posterior: dx.Distribution) -> jnp.ndarray:
+            mu, sigma = posterior.mean(), posterior.stddev()
+            return np.mean([ps.crps_gaussian(obs, mu=mu, sig=sigma) for obs in samples])
+
+        assert len(process_models.time) == len(observations.time), "Time coordinates do not match between models and observations"
+        assert hasattr(process_models[0].distribution, '_dist'), "Distribution not defined - fit models first"
+
+        # TODO: consider joint distributions
+        # Treat the samples as independent, aka take the mean and variance out the dist and use a normal
+
+        # Flatten observational data
+        observations_flat = observations.model_data.values.reshape(
+            observations.n_realisations,
+            observations.model_data.size // observations.n_realisations)
+
+        # Want to save the CRPS value per model (but flattened over other dims)
+        output_shape = [process_models.number_of_models, observations.model_data.size // len(observations.model_data.realisation)]
+
+        # Loop over models
+        # TODO: Gonna wanna speed this up some how (vmap, or get data out more sensibly)
+        models_crpss = []
+        for model_index in trange(process_models.number_of_models):
+            crps_values = []
+            model = process_models[model_index]
+            # Flatten the data
+            model_mean = model.distribution._dist.mean()
+            model_var = model.distribution._dist.variance()
+
+            for i in range(len(model_mean)):
+                target_density = dx.Normal(model_mean[i], model_var[i])
+                obs_samples = observations_flat[:, i].reshape(-1, 1) # Needs to be (n, 1) shape
+                crps = crps_score(obs_samples, target_density)
+
+                crps_values.append(crps)
+
+            crps_xarray = copy.deepcopy(
+                model.model_data.isel(realisation=0)
+            ).drop_vars("realisation")
+
+            crps_xarray.data = np.asarray(crps_values).reshape(crps_xarray.shape)
+            crps_xarray = crps_xarray.assign_coords(model=model.model_name)
+            models_crpss.append(crps_xarray)
+
+        # Put weights into an xarray DataArray for continuity and dimension description
+        crps_xarray = xr.concat(models_crpss, dim="model")
+        crps_xarray = crps_xarray.rename("Continuous Ranked Probability Score")
+        crps_inverse = 1 / crps_xarray 
+
+        # Standardise the weights such that they sum to 1.
+        crps_sum = crps_inverse.sum(dim="model")
+        crps_weights = crps_inverse / crps_sum
+        crps_weights = crps_weights.rename("Continuous Ranked Probability Scores weights")
+
+        return crps_weights
 
 
 

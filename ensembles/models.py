@@ -135,10 +135,6 @@ class MeanFieldApproximation:
         )
         return dist
 
-    # def return_distribution(self, params):
-    # return dx.MultivariateNormalDiag(params["mean"], params["variance"])
-
-
 class _HeteroskedasticGaussian(gpf.likelihoods.Likelihood):
     def __init__(self, **kwargs):
         super().__init__(latent_dim=1, observation_dim=2, **kwargs)
@@ -158,7 +154,6 @@ class _HeteroskedasticGaussian(gpf.likelihoods.Likelihood):
 
     # The following two methods are abstract in the base class.
     # They need to be implemented even if not used.
-
     def _predict_log_density(self, Fmu, Fvar, Y):
         raise NotImplementedError
 
@@ -431,57 +426,3 @@ class GPDTW3D:
             dist_type=dx.Normal,
         )
         return dist
-
-
-# class JointReconstruction(tf.Module):
-#     def __init__(self, means: Vector, variances: Vector, name="JointReconstruction"):
-#         super().__init__(name=name)
-#         self.mu, self.sigma_hat = self._build_parameters(means, variances)
-#         self.objective_evals = []
-
-#     def fit(self, samples: tf.Tensor, params: dict, compile_fn: bool = False) -> None:
-#         opt = tf.optimizers.Adam(learning_rate=params["learning_rate"])
-#         if compile_fn:
-#             objective = tf.function(self._objective_fn())
-#         else:
-#             objective = self._objective_fn()
-
-#         for _ in trange(params["optim_nits"]):
-#             with tf.GradientTape() as tape:
-#                 tape.watch(self.trainable_variables)
-#                 loss = objective(samples)
-#                 self.objective_evals.append(loss.numpy())
-#             grads = tape.gradient(loss, self.trainable_variables)
-#             opt.apply_gradients(zip(grads, self.trainable_variables))
-
-#     def return_parameters(self) -> tp.Tuple[tf.Tensor, tf.Tensor]:
-#         return tf.convert_to_tensor(self.mu), tf.convert_to_tensor(self.sigma_hat)
-
-#     def return_joint_distribution(self) -> tfp.distributions.Distribution:
-#         return tfp.distributions.MultivariateNormalTriL(self.mu, self.sigma_hat)
-
-#     def _objective_fn(self):
-#         dist = tfp.distributions.MultivariateNormalTriL(self.mu, self.sigma_hat)
-
-#         def log_likelihood(x: tf.Tensor) -> tf.Tensor:
-#             return -tf.reduce_sum(dist.log_prob(x))
-
-#         return log_likelihood
-
-#     @staticmethod
-#     def _build_parameters(
-#         means, variances
-#     ) -> tp.Tuple[tfp.util.TransformedVariable, tfp.util.TransformedVariable]:
-#         mu = tfp.util.TransformedVariable(
-#             initial_value=tf.cast(means, dtype=tf.float64),
-#             bijector=tfp.bijectors.Identity(),
-#             dtype=tf.float64,
-#             trainable=False,
-#         )
-#         sigma_hat = tfp.util.TransformedVariable(
-#             initial_value=tf.cast(tf.eye(num_rows=means.shape[0]) * variances, dtype=tf.float64),
-#             bijector=tfp.bijectors.FillTriangular(),
-#             dtype=tf.float64,
-#             trainable=True,
-#         )
-#         return mu, sigma_hat

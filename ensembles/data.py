@@ -128,9 +128,9 @@ class Distribution:
             mean.values - np.sqrt(var.values),
             mean.values + np.sqrt(var.values),
             alpha=0.2,
-            color="tab:blue",
+            **kwargs
         )
-        ax.plot(x, mean.values, color="tab:blue")
+        ax.plot(x, mean.values, **kwargs)
         return ax
 
     @property
@@ -314,7 +314,7 @@ class ProcessModel:
 
     @property
     def mean_across_realisations(self):
-        """Calcualte the model mean across the realisation axis
+        """Calculate the model mean across the realisation axis
 
         Returns:
             xr.DataArray: The model averaged over realisations
@@ -323,7 +323,7 @@ class ProcessModel:
 
     @property
     def std_across_realisations(self):
-        """Calcualte the model standard deviation across the realisation axis
+        """Calculate the model standard deviation across the realisation axis
 
         Returns:
             xr.DataArray: The model standard deviation
@@ -547,15 +547,6 @@ class ModelCollection:
             ax = _unique_legend(ax)
 
         fig.show()
-
-    # Don't think we use these anymore MA: 24/5/22
-    # @property
-    # def covariance_stack(self) -> jnp.DeviceArray:
-    #     return jnp.stack([model.distribution.covariance() for model in self.models])
-
-    # @property
-    # def mean_stack(self) -> jnp.DeviceArray:
-    #     return jnp.stack([model.distribution.mean() for model in self.models])
 
     def check_time_axes(self):
         """Helper function used when creating the ModelCollection to check that all model time coords are the same.

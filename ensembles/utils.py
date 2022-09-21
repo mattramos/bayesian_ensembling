@@ -15,7 +15,9 @@ from .ensemble_scheme import AbstractEnsembleScheme
 import jax.numpy as jnp
 from ensembles.wasserstein import gaussian_w2_distance_distrax
 import matplotlib.pyplot as plt
+import os
 import distrax
+import pickle as pkl
 
 class PerfectModelTest:
     """Performs a perfect model test on the ensemble of models. This 
@@ -31,7 +33,8 @@ class PerfectModelTest:
             emulate_method: AbstractModel,
             weight_method: AbstractWeight,
             ensemble_method: AbstractEnsembleScheme,
-            ssp: str
+            ssp: str,
+            save_dir: str = None,
             ):
         """Initialisation of the perfect model test.
 
@@ -48,6 +51,20 @@ class PerfectModelTest:
         self.weight_method = weight_method
         self.ensemble_method = ensemble_method
         self.ssp = ssp
+        self.save_dir = save_dir
+
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        self.save_fig_dir = os.path.join(save_dir, 'figs')
+        if not os.path.exists(self.save_fig_dir):
+            os.makedirs(self.save_fig_dir)
+        self.save_csv_dir = os.path.join(save_dir, 'csvs')
+        if not os.path.exists(self.save_csv_dir):
+            os.makedirs(self.save_csv_dir)
+        
+
+
 
     def _run_single_test(
             self,
@@ -55,7 +72,8 @@ class PerfectModelTest:
             forecast_models: ModelCollection,
             pseudo_observations_past: ProcessModel,
             pseudo_observations_future: ProcessModel,
-            n_optim_nits: int = 1000):
+            n_optim_nits: int = 1000,
+            use_prefit_models: bool = False):
         """A helper function to run a single iteration of the perfect model test, including validation against set metrics (NLL, RMSE, W2).
 
         Args:
@@ -66,13 +84,25 @@ class PerfectModelTest:
         """
 
         # Run the setup
-        hindcast_models.fit(model=self.emulate_method(), compile_objective=True, n_optim_nits=n_optim_nits)
-        forecast_models.fit(model=self.emulate_method(), compile_objective=True, n_optim_nits=n_optim_nits)
-        dist = self.emulate_method().fit(pseudo_observations_future, compile_objective=True, n_optim_nits=n_optim_nits)
-        pseudo_observations_future.distribution = dist
+        # Use prefit models if specified
+        if use_prefit_models != True:
+            hindcast_models.fit(model=self.emulate_method(), compile_objective=True, n_optim_nits=n_optim_nits, progress_bar=False)
+            forecast_models.fit(model=self.emulate_method(), compile_objective=True, n_optim_nits=n_optim_nits, progress_bar=False)
+            dist = self.emulate_method().fit(pseudo_observations_future, compile_objective=True, n_optim_nits=n_optim_nits)
+            pseudo_observations_future.distribution = dist
+
         weight_function = self.weight_method()
         weights = weight_function(hindcast_models, pseudo_observations_past)
         # TODO: Add some functionality for constructing unpacked weights
+        mean_weights = weights.mean('time')
+        plt.figure()
+        plt.bar(forecast_models.model_names, mean_weights.values)
+        plt.ylabel('Weights')
+        plt.xticks(rotation='vertical')
+        save_path = os.path.join(self.save_fig_dir, f"weights/{weight_function.name}_with_{pseudo_observations_future.model_name}_as_pseudo_truth_{self.ssp}.png")
+        plt.savefig(save_path, bbox_inches='tight')
+        plt.close()
+
         weights_single = weights.mean('time').expand_dims(time=forecast_models[0].model_data.time, axis=1)
         ensemble_method = self.ensemble_method()
         barycentre = ensemble_method(forecast_models, weights_single)
@@ -108,17 +138,19 @@ class PerfectModelTest:
         plot_dist(pseudo_observations_future.distribution, color=cmap()[1], label='True model')
         plt.plot(barycentre.mean.time, mmm_dist.mean(), color=cmap()[2], label='MMM', zorder=3)
         plt.fill_between(barycentre.mean.time.values, mmm_dist.mean() - 2 * np.sqrt(mmm_dist.variance()), mmm_dist.mean() + 2 * np.sqrt(mmm_dist.variance()), alpha=0.2, color=cmap()[2], zorder=2, linewidth=0)
+        # TODO - could generalise labels to be non temp related
         plt.xlabel('Time')
         plt.ylabel('Temperature anomally (°C) \n realitve to (1961-1990)')
         plt.legend()
 
-        plt.savefig(f"/home/amosm1/bayesian_ensembling/experiments/figures/PMT/{pseudo_observations_future.model_name}_as_pseudo_truth_{self.ssp}.png")
-        plt.show()
+        save_path = os.path.join(self.save_fig_dir, f"projs/{pseudo_observations_future.model_name}_as_pseudo_truth_{weight_function.name}_{self.ssp}.png")
+        plt.savefig(save_path)
+        plt.close()
 
         return nll_bary, rmse_bary, w2_bary, nll_mmm, rmse_mmm, w2_mmm
 
 
-    def run(self, n_optim_nits: int = 1000, save_file=False):
+    def run(self, n_optim_nits: int = 1000, use_prefit_models=False):
         """Runs the perfect model test.
 
         Args:
@@ -126,7 +158,7 @@ class PerfectModelTest:
             save_file (bool, optional): Path and file name to save results to. Defaults to False (not saving).
         """
 
-        df = pd.DataFrame(columns=['model as psuedo obs', 'nll_bary', 'rmse_bary', 'w2_bary', 'nll_mmm', 'rmse_mmm', 'w2_mmm'])
+        df = pd.DataFrame(columns=['model as psuedo obs', f'nll_bary_{self.weight_method().name}', f'rmse_bary_{self.weight_method().name}', f'w2_bary_{self.weight_method().name}', 'nll_mmm', 'rmse_mmm', 'w2_mmm'])
         n_models = self.hindcast_models.number_of_models
         for i in range(n_models):
             # Copy hindcast models and remove the pseudo observations
@@ -141,7 +173,8 @@ class PerfectModelTest:
                 ModelCollection(forecast_model_list),
                 pseudo_observations_past,
                 pseudo_observations_future,
-                n_optim_nits)
+                n_optim_nits,
+                use_prefit_models=use_prefit_models)
             df.loc[len(df.index)] = [
                 pseudo_observations_past.model_name,
                 nll_bary,
@@ -152,40 +185,6 @@ class PerfectModelTest:
                 w2_mmm
             ]
             # print(f'With {pseudo_observations_past.model_name} as pseudo obs: NLL: {nll}, RMSE: {rmse}, W2: {w2}')
-
-        if save_file:
-            df.to_csv(save_file)
-        else:
-            return df
-
-
-
-
-def simulate_data(
-    n_obs: int,
-    n_realisations: int,
-    noise_lims: tp.Tuple[float, float],
-    true_kernel: gpflow.kernels.Kernel,
-    xlims: tp.Tuple[float, float] = (-5.0, 5.0),
-    jitter_amount: float = 1e-8,
-    seed_value: int = 123,
-) -> tp.Tuple[np.ndarray, np.ndarray]:
-    tfp_seed = tfp.random.sanitize_seed(seed_value)
-    rng = np.random.RandomState(123)
-    X = np.sort(rng.uniform(*xlims, (n_obs, 1)), axis=0)
-    true_kernel = gpflow.kernels.Matern32()
-    Kxx = true_kernel(X) + tf.cast(tf.eye(n_obs) * jitter_amount, dtype=tf.float64)
-    latent_y = tfp.distributions.MultivariateNormalTriL(
-        np.zeros(n_obs), tf.linalg.cholesky(Kxx)
-    ).sample(seed=tfp_seed)
-
-    noise_terms = np.random.uniform(*noise_lims, size=n_realisations)
-    realisations = []
-
-    for noise in noise_terms:
-        sample_y = latent_y.numpy() + rng.normal(
-            loc=0.0, scale=noise, size=latent_y.numpy().shape
-        )
-        realisations.append(sample_y)
-    Y = np.asarray(realisations).T
-    return X, latent_y, Y
+        save_file = os.path.join(self.save_csv_dir, f'/prefect_model_test_results_{self.weight_method().name}_{self.ssp}.csv')
+        df.to_csv(save_file)
+        print(f'Saved results to {save_file}')
