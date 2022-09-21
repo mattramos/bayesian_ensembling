@@ -17,6 +17,7 @@ import warnings
 import distrax as dx
 import cartopy.crs as ccrs
 import jax.random as jr
+import pickle
 
 key = jr.PRNGKey(123)
 
@@ -412,6 +413,16 @@ class ModelCollection:
                 warnings.warn("Removing the model's previously learnt distribution")
             dist = model.fit(process_model, **kwargs)
             process_model.distribution = dist
+
+    def save(self, path: str):
+        """Save the ModelCollection to disk
+
+        Args:
+            path (str): The path to save the ModelCollection to
+        """
+        with open(path, "wb") as f:
+            pickle.dump(self, f)
+
 
     @property
     def time(self) -> ColumnVector:

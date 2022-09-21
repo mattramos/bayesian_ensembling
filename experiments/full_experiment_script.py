@@ -112,25 +112,25 @@ hist585_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits
 
 ssp585_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2000, progress_bar=False)
 
-# Construct log likelihoods (weights) for each model
-weight_function = es.LogLikelihoodWeight()
-hist119_ll_weights = weight_function(hist119_anom_models, observations)
-hist126_ll_weights = weight_function(hist126_anom_models, observations)
-hist245_ll_weights = weight_function(hist245_anom_models, observations)
-hist370_ll_weights = weight_function(hist370_anom_models, observations)
-hist434_ll_weights = weight_function(hist434_anom_models, observations)
-hist460_ll_weights = weight_function(hist460_anom_models, observations)
-hist585_ll_weights = weight_function(hist585_anom_models, observations)
+# Construct weights for each model
+weight_function = es.CRPSWeight()
+hist119_cprs_weights = weight_function(hist119_anom_models, observations)
+hist126_cprs_weights = weight_function(hist126_anom_models, observations)
+hist245_cprs_weights = weight_function(hist245_anom_models, observations)
+hist370_cprs_weights = weight_function(hist370_anom_models, observations)
+hist434_cprs_weights = weight_function(hist434_anom_models, observations)
+hist460_cprs_weights = weight_function(hist460_anom_models, observations)
+hist585_cprs_weights = weight_function(hist585_anom_models, observations)
 
 # Flatten weights
 # 1 weight per model
-weights_119 = hist119_ll_weights.mean('time').expand_dims(time=ssp119_anom_models[0].model_data.time, axis=1)
-weights_126 = hist126_ll_weights.mean('time').expand_dims(time=ssp126_anom_models[0].model_data.time, axis=1)
-weights_245 = hist245_ll_weights.mean('time').expand_dims(time=ssp245_anom_models[0].model_data.time, axis=1)
-weights_370 = hist370_ll_weights.mean('time').expand_dims(time=ssp370_anom_models[0].model_data.time, axis=1)
-weights_434 = hist434_ll_weights.mean('time').expand_dims(time=ssp434_anom_models[0].model_data.time, axis=1)
-weights_460 = hist460_ll_weights.mean('time').expand_dims(time=ssp460_anom_models[0].model_data.time, axis=1)
-weights_585 = hist585_ll_weights.mean('time').expand_dims(time=ssp585_anom_models[0].model_data.time, axis=1)
+weights_119 = hist119_cprs_weights.mean('time').expand_dims(time=ssp119_anom_models[0].model_data.time, axis=1)
+weights_126 = hist126_cprs_weights.mean('time').expand_dims(time=ssp126_anom_models[0].model_data.time, axis=1)
+weights_245 = hist245_cprs_weights.mean('time').expand_dims(time=ssp245_anom_models[0].model_data.time, axis=1)
+weights_370 = hist370_cprs_weights.mean('time').expand_dims(time=ssp370_anom_models[0].model_data.time, axis=1)
+weights_434 = hist434_cprs_weights.mean('time').expand_dims(time=ssp434_anom_models[0].model_data.time, axis=1)
+weights_460 = hist460_cprs_weights.mean('time').expand_dims(time=ssp460_anom_models[0].model_data.time, axis=1)
+weights_585 = hist585_cprs_weights.mean('time').expand_dims(time=ssp585_anom_models[0].model_data.time, axis=1)
 
 # Construct the barycentres
 ensemble_method = es.Barycentre()

@@ -19,6 +19,16 @@ import os
 import distrax
 import pickle as pkl
 
+def load_model_collection(self, path: str):
+    """Load a ModelCollection from disk
+
+    Args:
+        path (str): The path to load the ModelCollection from
+    """
+    with open(path, "rb") as f:
+        loaded_mc = pkl.load(f)
+    return loaded_mc
+
 class PerfectModelTest:
     """Performs a perfect model test on the ensemble of models. This 
     is where a model is removed from the ensemble and used as 'psudo observations' 

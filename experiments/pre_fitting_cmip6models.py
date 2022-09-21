@@ -1,26 +1,29 @@
-# Experiment script for performing perfect model tests.
+# I think the paths in this will be wrong
 
 import ensembles as es
+import matplotlib.pyplot as plt
+import jax.random as jr
 from jax.config import config
 import seaborn as sns
 from glob import glob 
 import numpy as np 
 import xarray as xr
-from ensembles.utils import PerfectModelTest
-
+from ensembles.plotters import _unique_legend
+import pickle
 
 config.update("jax_enable_x64", True)
+key = jr.PRNGKey(123)
 sns.set_style('whitegrid')
 
 
-def get_data(ssp_dir):
+def load_model_data(ssp_dir='./data/gmst/ssp370'):
 
-    obs_da = xr.open_dataarray('./../experiments/data/obs/gmst/HadCRUT.5.0.1.0.analysis.anomalies_gmst.nc')
+    obs_da = xr.open_dataarray('./data/obs/gmst/HadCRUT.5.0.1.0.analysis.anomalies_gmst.nc')
     obs_time = obs_da.time
 
     # Find the union between historical models and forecast models for this ssp
     hist_model_files = dict()
-    for model_file in sorted(glob('./../experiments/data/gmst/historical/*nc')):
+    for model_file in sorted(glob('./data/gmst/historical/*nc')):
         model_name = '_'.join(model_file.split("/")[-1].split('_')[:2])
         hist_model_files[model_name] = model_file
     ssp_model_files = dict()
@@ -46,7 +49,7 @@ def get_data(ssp_dir):
         hist_anom_models.append(anomaly_model)
         climatology_dict[mn] = anomaly_model.climatology
 
-    hindcast_models = es.ModelCollection(hist_anom_models)
+    hist_anom_models = es.ModelCollection(hist_anom_models)
 
     # Load forecast models and calculate the anomally
     ssp_anom_models = []
@@ -55,35 +58,33 @@ def get_data(ssp_dir):
         da = xr.open_dataarray(mf)
         model_data = es.ProcessModel(da, mn)
         # Find the anomally of that data
+        # time = da.indexes['time']
+        # if not isinstance(time, DatetimeIndex):
+        #     datetimeindex = da.indexes['time'].to_datetimeindex()
+        #     da['time'] = datetimeindex
         anomaly_model = model_data.calculate_anomaly(climatology=climatology_dict[mn], resample_freq='Y')
         ssp_anom_models.append(anomaly_model)
 
-    forecast_models = es.ModelCollection(ssp_anom_models)
-    return hindcast_models, forecast_models
+    ssp_anom_models = es.ModelCollection(ssp_anom_models)
 
-for scenario in ['ssp119', 'ssp126', 'ssp245', 'ssp370', 'ssp434', 'ssp460', 'ssp585']:
-    hindcast_models, forecast_models = get_data(f'./../experiments/data/gmst/{scenario}')
+    return hist_anom_models, ssp_anom_models
 
-    # # Perform the perfect model test for MMM
-    # pmt = PerfectModelTest(
-    #      hindcast_models=hindcast_models,
-    #      forecast_models=forecast_models,
-    #      emulate_method=es.MeanFieldApproximation,
-    #      weight_method=es.UniformWeight,
-    #      ensemble_method=es.MultiModelMean
-    #      )
+def save_models(ssp_dir='./data/gmst/ssp370'):
+    ssp_num = ssp_dir.split('/')[-1]
+    hist_anom_models, ssp_anom_models = load_model_data(ssp_dir=ssp_dir)
+    hist_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2500, progress_bar=False)
+    ssp_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2500, progress_bar=False)
 
-    # pmt.run(n_optim_nits=2000, save_file=f'results/perfect_model_test_mmm_{scenario}.csv')
+    hist_save_path = './pre_fit_models/hist{}_1D_models.pkl'.format(ssp_num)
+    with open(hist_save_path, 'wb') as file:
+        pickle.dump(hist_anom_models, file) 
+    ssp_save_path = './pre_fit_models/{}_1D_models.pkl'.format(ssp_num)
+    with open(ssp_save_path, 'wb') as file:
+        pickle.dump(ssp_anom_models, file)
+        pickle.dump(ssp_anom_models, file)
 
-    # Perform the perfect model test for Barycentre
-    pmt = PerfectModelTest(
-            hindcast_models=hindcast_models,
-            forecast_models=forecast_models,
-            emulate_method=es.GPDTW1D,
-            weight_method=es.LogLikelihoodWeight,
-            ensemble_method=es.Barycentre,
-            ssp=scenario
-            )
 
-    pmt.run(n_optim_nits=2000, save_file=f'results/perfect_model_test_barycentre_{scenario}.csv')
-
+ssps = ['ssp119', 'ssp126', 'ssp245', 'ssp370', 'ssp460', 'ssp434', 'ssp585']
+for ssp in ssps:
+    ssp_dir = './data/gmst/{}'.format(ssp)
+    save_models(ssp_dir=ssp_dir)

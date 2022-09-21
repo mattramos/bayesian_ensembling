@@ -18,8 +18,8 @@ obs_da = xr.open_dataarray('./../../data/obs/gmst/HadCRUT.5.0.1.0.analysis.anoma
 obs_time = obs_da.time
 
 def load_prefit_models(ssp):
-    hist_file = '/home/amosm1/bayesian_ensembling/experiments/pre_fit_models/hist{}_1D_models.pkl'.format(ssp)
-    ssp_file = '/home/amosm1/bayesian_ensembling/experiments/pre_fit_models/ssp{}_1D_models.pkl'.format(ssp)
+    hist_file = './../../pre_fit_models/hist{}_1D_models.pkl'.format(ssp)
+    ssp_file = './../../pre_fit_models/ssp{}_1D_models.pkl'.format(ssp)
     with open(hist_file, 'rb') as file1:
         hist_models = pkl.load(file1)
     with open(ssp_file, 'rb') as file2:
