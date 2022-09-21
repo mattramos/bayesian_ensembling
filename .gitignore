@@ -1,3 +1,7 @@
+# repo Specific data
+experiments/data/obs/gridded
+experiments/data/gridded
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

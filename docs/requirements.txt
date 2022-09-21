@@ -1,0 +1,16 @@
+furo
+jinja2<3.1
+nbsphinx>=0.8.0
+nb-black==1.0.7
+matplotlib==3.3.3
+sphinx-copybutton
+pandoc
+sphinxcontrib.bibtex
+jupytext
+ipython
+ipykernel
+watermark
+sphinxext-opengraph
+ipywidgets
+# Install Ensembles istself
+.

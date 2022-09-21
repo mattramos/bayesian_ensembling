@@ -59,7 +59,11 @@ def squared_DTW(s, t, cost_mat, delta_mat):
 
     for i in range(1, s_len):
         for j in range(1, t_len):
-            diag, left, top = cost_mat[i - 1, j - 1], cost_mat[i, j - 1], cost_mat[i - 1, j]
+            diag, left, top = (
+                cost_mat[i - 1, j - 1],
+                cost_mat[i, j - 1],
+                cost_mat[i - 1, j],
+            )
             if diag <= left:
                 if diag <= top:
                     res = diag
@@ -101,7 +105,11 @@ def DBA_update(center, series, cost_mat, path_mat, delta_mat):
 
         for i in range(1, center_length):
             for j in range(1, s_len):
-                diag, left, top = cost_mat[i - 1, j - 1], cost_mat[i, j - 1], cost_mat[i - 1, j]
+                diag, left, top = (
+                    cost_mat[i - 1, j - 1],
+                    cost_mat[i, j - 1],
+                    cost_mat[i - 1, j],
+                )
                 if diag <= left:
                     if diag <= top:
                         res = diag
