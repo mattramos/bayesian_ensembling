@@ -10,6 +10,7 @@ import numpy as np
 import xarray as xr
 from ensembles.plotters import _unique_legend
 import pickle
+import os
 
 config.update("jax_enable_x64", True)
 key = jr.PRNGKey(123)
@@ -72,8 +73,11 @@ def load_model_data(ssp_dir='./data/gmst/ssp370'):
 def save_models(ssp_dir='./data/gmst/ssp370'):
     ssp_num = ssp_dir.split('/')[-1]
     hist_anom_models, ssp_anom_models = load_model_data(ssp_dir=ssp_dir)
-    hist_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2500, progress_bar=False)
-    ssp_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2500, progress_bar=False)
+    hist_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2500, progress_bar=True)
+    ssp_anom_models.fit(model=es.GPDTW1D(), compile_objective=True, n_optim_nits=2500, progress_bar=True)
+
+    if not os.path.exists('./pre_fit_models'):
+        os.makedirs('./pre_fit_models')
 
     hist_save_path = './pre_fit_models/hist{}_1D_models.pkl'.format(ssp_num)
     with open(hist_save_path, 'wb') as file:
