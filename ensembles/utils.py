@@ -10,7 +10,7 @@ from argparse import ArgumentParser
 import pandas as pd
 from .data import ModelCollection, ProcessModel
 from .models import AbstractModel
-from .weights import AbstractWeight
+from .weights import AbstractWeight, ModelSimilarityWeight
 from .ensemble_scheme import AbstractEnsembleScheme
 import jax.numpy as jnp
 from ensembles.wasserstein import gaussian_w2_distance_distrax
@@ -44,6 +44,7 @@ class PerfectModelTest:
             weight_method: AbstractWeight,
             ensemble_method: AbstractEnsembleScheme,
             ssp: str,
+            include_sim: bool = False,
             save_dir: str = None,
             ):
         """Initialisation of the perfect model test.
@@ -62,6 +63,7 @@ class PerfectModelTest:
         self.ensemble_method = ensemble_method
         self.ssp = ssp
         self.save_dir = save_dir
+        self.include_sim = include_sim
 
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
@@ -69,6 +71,10 @@ class PerfectModelTest:
         self.save_fig_dir = os.path.join(save_dir, 'figs')
         if not os.path.exists(self.save_fig_dir):
             os.makedirs(self.save_fig_dir)
+        if not os.path.exists(os.path.join(self.save_fig_dir, 'weights')):
+            os.makedirs(os.path.join(self.save_fig_dir, 'weights'))
+        if not os.path.exists(os.path.join(self.save_fig_dir, 'projs')):
+            os.makedirs(os.path.join(self.save_fig_dir, 'projs'))
         self.save_csv_dir = os.path.join(save_dir, 'csvs')
         if not os.path.exists(self.save_csv_dir):
             os.makedirs(self.save_csv_dir)
@@ -105,15 +111,28 @@ class PerfectModelTest:
         weights = weight_function(hindcast_models, pseudo_observations_past)
         # TODO: Add some functionality for constructing unpacked weights
         mean_weights = weights.mean('time')
+        if self.include_sim:
+            sim_weight_function = ModelSimilarityWeight()
+            sim_weights = sim_weight_function(hindcast_models, pseudo_observations_future)
+            mean_sim_weights = sim_weights.mean('time')
+            total_weights = mean_weights * mean_sim_weights
+            total_weights = total_weights / total_weights.sum()
+        else:
+            total_weights = mean_weights
+        
         plt.figure()
-        plt.bar(forecast_models.model_names, mean_weights.values)
+        plt.bar(forecast_models.model_names, total_weights.values)
         plt.ylabel('Weights')
         plt.xticks(rotation='vertical')
-        save_path = os.path.join(self.save_fig_dir, f"weights/{weight_function.name}_with_{pseudo_observations_future.model_name}_as_pseudo_truth_{self.ssp}.png")
+        if self.include_sim:
+            filename = f"weights/{weight_function.name}_plus_sim_with_{pseudo_observations_future.model_name}_as_pseudo_truth_{self.ssp}.png"
+        else:
+            filename = f"weights/{weight_function.name}_with_{pseudo_observations_future.model_name}_as_pseudo_truth_{self.ssp}.png"
+        save_path = os.path.join(self.save_fig_dir, filename)
         plt.savefig(save_path, bbox_inches='tight')
         plt.close()
 
-        weights_single = weights.mean('time').expand_dims(time=forecast_models[0].model_data.time, axis=1)
+        weights_single = total_weights.expand_dims(time=forecast_models[0].model_data.time, axis=1)
         ensemble_method = self.ensemble_method()
         barycentre = ensemble_method(forecast_models, weights_single)
 
@@ -153,7 +172,11 @@ class PerfectModelTest:
         plt.ylabel('Temperature anomally (°C) \n realitve to (1961-1990)')
         plt.legend()
 
-        save_path = os.path.join(self.save_fig_dir, f"projs/{pseudo_observations_future.model_name}_as_pseudo_truth_{weight_function.name}_{self.ssp}.png")
+        if self.include_sim:
+            filename = f"projs/{pseudo_observations_future.model_name}_as_pseudo_truth_{weight_function.name}_plus_sim_{self.ssp}.png"
+        else:
+            filename = f"projs/{pseudo_observations_future.model_name}_as_pseudo_truth_{weight_function.name}_{self.ssp}.png"
+        save_path = os.path.join(self.save_fig_dir, filename)
         plt.savefig(save_path)
         plt.close()
 
@@ -195,6 +218,10 @@ class PerfectModelTest:
                 w2_mmm
             ]
             # print(f'With {pseudo_observations_past.model_name} as pseudo obs: NLL: {nll}, RMSE: {rmse}, W2: {w2}')
-        save_file = os.path.join(self.save_csv_dir, f'/prefect_model_test_results_{self.weight_method().name}_{self.ssp}.csv')
+            if self.include_sim:
+                file_name = f'prefect_model_test_results_{self.weight_method().name}_plus_sim_{self.ssp}.csv'
+            else:
+                file_name = f'prefect_model_test_results_{self.weight_method().name}_{self.ssp}.csv'
+        save_file = os.path.join(self.save_csv_dir, file_name)
         df.to_csv(save_file)
         print(f'Saved results to {save_file}')

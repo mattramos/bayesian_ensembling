@@ -205,9 +205,11 @@ class ModelSimilarityWeight(AbstractWeight):
             w2_dists_vector = np.nanmean(w2_dists, axis=1)
 
             # Put weights into an xarray DataArray for continuity and dimension description
-            weights_array = xr.DataArray(w2_dists_vector, dims=['model'])
+            weights_array = xr.DataArray(np.expand_dims(w2_dists_vector, -1), dims=['model', 'time'])
             weights_array = weights_array.rename("Model similarity weights")
             weights_array = weights_array.assign_coords(model=process_models.model_names)
+            weights_array = weights_array.assign_coords(time=np.asarray([0]))
+
 
         elif mode == 'spatial':
             n_models = process_models.number_of_models
