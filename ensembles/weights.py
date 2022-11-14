@@ -40,7 +40,7 @@ class AbstractWeight:
 
 
 class LogLikelihoodWeight(AbstractWeight):
-    def __init__(self, name: str = "LogLikelihood") -> None:
+    def __init__(self, name: str = "LogLikelihoodWeight") -> None:
         super().__init__(name)
 
     @abc.abstractmethod
@@ -138,7 +138,6 @@ class InverseSquareWeight(AbstractWeight):
 
         weights = xr.concat(weights, dim="model")
         weights = weights / weights.sum("model")
-
         assert (
             weights.time.size == model.time.size
         ), "Weight is not the same size as model. Check observations and model time coordinates match!"
@@ -147,7 +146,7 @@ class InverseSquareWeight(AbstractWeight):
 
 
 class UniformWeight(AbstractWeight):
-    def __init__(self, name: str = "InverseSquareWeight") -> None:
+    def __init__(self, name: str = "UniformWeight") -> None:
         super().__init__(name)
 
     @abc.abstractmethod
@@ -252,19 +251,14 @@ class ModelSimilarityWeight(AbstractWeight):
             for i in trange(n_models):
                 for j in range(n_models):
                     for t in range(n_times):
-                        if isinstance(process_models[i].distribution._dist, dx.Normal):
-                            full_cov = False
-                            dist = dx.Normal
-                        else:
-                            full_cov = True
-                            dist = dx.MultiVariate
+                        dist = dx.Normal
                         dist1 = dist(
-                            process_models[i].distribution.mean[t],
-                            process_models[i].distribution.variance[t])
+                            process_models[i].distribution.mean[t].values.reshape(-1),
+                            process_models[i].distribution.variance[t].values.reshape(-1))
                         dist2 = dist(
-                            process_models[j].distribution.mean[t],
-                            process_models[j].distribution.variance[t])
-                        w2_model = gaussian_w2_distance_distrax(dist1, dist2, full_cov=full_cov)
+                            process_models[j].distribution.mean[t].values.reshape(-1),
+                            process_models[j].distribution.variance[t].values.reshape(-1))
+                        w2_model = gaussian_w2_distance_distrax(dist1, dist2, full_cov=False)
                         w2_dists[i, j, t] = w2_model
             # Collapse the wasserstein distance matrix into a 2D matrix
             w2_dists_matrix = np.nanmean(w2_dists, axis=1)
