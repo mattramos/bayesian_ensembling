@@ -1,5 +1,4 @@
 import numpy as np
-import ot
 import tensorflow_probability as tfp
 import tensorflow as tf
 import distrax
@@ -9,15 +8,27 @@ import warnings
 tfd = tfp.distributions
 
 def sqrtm(A):
+    """Fast computation of the matrix square root of matrix A."""
     u, s, v = jnp.linalg.svd(A)
     return u @ jnp.diag(jnp.sqrt(s)) @ v
 
 def wasserstien_distance(A, B):
+    """Compute the Wasserstein distance between two distributions described by their covariances A and B."""
     Root_1= sqrtm(A)
     Root_2= sqrtm(B)
     return jnp.trace(A) + jnp.trace(B) - 2*jnp.trace(sqrtm(Root_1 @ B @ Root_1))
 
-def gaussian_w2_distance_distrax(alpha: distrax.Distribution, beta: distrax.Distribution, full_cov=True) -> np.ndarray:
+def gaussian_w2_distance_distrax(alpha: distrax.Distribution, beta: distrax.Distribution, full_cov=True) -> jnp.ndarray:
+    """JAX implementation of the Wasserstein distance between two Gaussian distributions.
+
+    Args:
+        alpha (distrax.Distribution): distribution 1
+        beta (distrax.Distribution): distribution 2
+        full_cov (bool, optional): Whether or not to use the full covariance. Defaults to True.
+
+    Returns:
+        jnp.ndarray: Wasserstein distance
+    """
     if full_cov:
         mu1, sigma1 = alpha.mean(), alpha.covariance()
         mu2, sigma2 = beta.mean(), beta.covariance()
@@ -53,8 +64,19 @@ def gaussian_barycentre(
     weights,
     tolerance: float = 1e-6,
     init_var=1.0,
-    n_bins=100,
 ):
+    """Find the Wasserstein barycentre of a set of 1D Gaussian distributions described by their means and standard deviations.
+
+    Args:
+        means (jnp.array): The means of the distributions (n_distributions)
+        std_devs (jnp.array): The standard deviations of the distributions (n_distributions)
+        weights (jnp.array): The weights of the distributions (n_distributions)
+        tolerance (float, optional): Tolerance of convergence. Defaults to 1e-6.
+        init_var (float, optional): Defaults to 1.0.
+
+    Returns:
+        mu, sigma (jnp.array, jnp.array): The mean and standard deviation of the barycentre
+    """
     barycentre_variance = init_var
     n_iters = 0
     while True:
