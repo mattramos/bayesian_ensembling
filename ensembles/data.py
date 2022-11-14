@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import xarray as xr
 import warnings
 
-# from .models import AbstractModel
 import distrax as dx
 import cartopy.crs as ccrs
 import jax.random as jr
@@ -24,6 +23,19 @@ key = jr.PRNGKey(123)
 
 @dataclass
 class Distribution:
+    """Data class for handling the learnt distributions of models and ensembles.
+    The class stores distrax distributions and handles them such that we can retain coordinate information.
+    Currently set up for multivariate normal distributions, but could be extended to other distributions.
+
+    Args:
+    mu (xr.DataArray): The mean of the distribution
+    covariance (xr.DataArray): The covariance of the distribution
+    dim_array (xr.DataArray): A blank array with the physical dimensions of the distribution
+    dist_type (dx.Distribution): The distrax distribution type
+
+    Returns:
+        Distribution: The data class for the distribution
+    """    
     mu: np.array
     covariance: np.array
     dim_array: xr.DataArray
@@ -33,6 +45,15 @@ class Distribution:
         self._dist = self.dist_type(self.mu, self.covariance)
 
     def reshape(self, vals, name=False):
+        """Reshapes the numpy values and places them into a xarray DataArray with the correct coordinates.
+
+        Args:
+            vals (jnp.array/np.array): The values to be reshaped
+            name (str, optional): The name of the output DataArray. Defaults to False.
+
+        Returns:
+            xr.DataArray: The reshaped DataArray with coordinate information
+        """        
         reshaped_vals = vals.reshape(self.dim_array.shape)
         reshaped_array = self.dim_array.copy(data=reshaped_vals)
         if name:
@@ -41,6 +62,9 @@ class Distribution:
 
     # TODO: Could add in xarray indexing args through an arg dict for xarray sel
     def plot_temporally(self):
+        """Plots the distribution along the temporal dimension, collapsing any spatial dimensions.
+        Plots the mean and 1,2,3 standard deviations.
+        """        
         reshaped_mean = self.reshape(self._dist.mean(), name="Distribution mean")
         reshaped_sigma = np.sqrt(
             self.reshape(self._dist.variance(), name="Variance mean")
@@ -80,6 +104,8 @@ class Distribution:
         fig.show()
 
     def plot_spatially(self):
+        """ Plots the distribution along the spatial dimensions, collapsing any temporal dimensions.
+        """        
         reshaped_mean = self.mean
         reshaped_sigma = np.sqrt(self.variance)
         # TODO: could add in area weighting into this
@@ -109,30 +135,6 @@ class Distribution:
         axes[1].coastlines()
         fig.tight_layout()
         fig.show()
-
-    def plot(self, ax=None, **kwargs):
-        if not ax:
-            fig, ax = plt.subplots(figsize=(15, 7))
-
-        ax.set_prop_cycle(get_style_cycler())
-        mean = self.mean
-        var = self.variance
-        if mean.ndim > 1:
-            warnings.warn("Collapsing (mean) non-time dimensions for plotting")
-            coord_names = [coord for coord in mean.coords]
-            coord_names.remove("time")
-            mean = mean.mean(coord_names)
-            var = var.mean(coord_names)
-        x = mean.time.values
-        ax.fill_between(
-            x,
-            mean.values - np.sqrt(var.values),
-            mean.values + np.sqrt(var.values),
-            alpha=0.2,
-            **kwargs
-        )
-        ax.plot(x, mean.values, **kwargs)
-        return ax
 
     @property
     def mean(self):
@@ -225,22 +227,6 @@ class ProcessModel:
         """
         time = self.model_data.time
         return time
-
-    def standardise_data(self):
-        name = self.model_name + " standardised"
-        standardised_data = (self.model_data - self.model_mean) / self.model_std
-        standardised_model = ProcessModel(standardised_data, name)
-        assert not hasattr(self, "original_mean"), "This data is already standardised!"
-        standardised_model.original_mean = self.model_mean
-        standardised_model.original_std = self.model_std
-        return standardised_model
-
-    def unstandardise_data(self):
-        assert hasattr(self, "original_mean"), "This data is not standardised!"
-        name = self.model_name + " unstandardised"
-        unstandardised_data = self.model_data * self.original_std + self.original_mean
-        unstandardised_model = ProcessModel(unstandardised_data, name)
-        return unstandardised_model
 
     def calculate_anomaly(
         self,
@@ -399,7 +385,7 @@ class ModelCollection:
             self.idx += 1
         except IndexError:
             self.idx = 0
-            raise StopIteration  # Done iterating.
+            raise StopIteration
         return out
 
     def fit(self, model, **kwargs):
@@ -415,7 +401,7 @@ class ModelCollection:
             process_model.distribution = dist
 
     def save(self, path: str):
-        """Save the ModelCollection to disk
+        """Save the ModelCollection to disk. The ModelCollection can be reloaded using pickle.load(path)
 
         Args:
             path (str): The path to save the ModelCollection to
