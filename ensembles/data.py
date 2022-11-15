@@ -102,7 +102,7 @@ class Distribution:
         """        
         reshaped_mean = self.mean
         reshaped_sigma = np.sqrt(self.variance)
-        # TODO: could add in area weighting into this
+        # TODO: should add in area weighting into this
         if "time" in reshaped_mean.coords:
             reshaped_mean = reshaped_mean.mean("time")
             reshaped_sigma = reshaped_sigma.mean("time")
