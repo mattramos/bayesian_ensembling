@@ -10,9 +10,9 @@ def parse_requirements_file(filename):
 setup(
     name="Bayesian Ensembles",
     version="0.0.1",
-    author="Matthew Amos and Thomas Pinder",
-    author_email="t.pinder2@lancaster.ac.uk",
+    author="Matt Amos and Thomas Pinder",
+    author_email="matt.r.amos@outlook.com, t.pinder2@lancaster.ac.uk",
     packages=find_packages(".", exclude=["tests"]),
     license="LICENSE",
-    description="Bayesian ensmbling for environmental problems.",
+    description="Bayesian ensembling for environmental problems.",
 )
