@@ -1,18 +1,12 @@
-from concurrent.futures import process
-from copy import copy
-from distutils import dist
-import distrax
-import jax.numpy as jnp
+
 import typing as tp
 from dataclasses import dataclass
 import numpy as np
 from .array_types import ColumnVector
 from .plotters import _unique_legend, get_style_cycler
-import seaborn as sns
 import matplotlib.pyplot as plt
 import xarray as xr
 import warnings
-
 import distrax as dx
 import cartopy.crs as ccrs
 import jax.random as jr
@@ -401,7 +395,7 @@ class ModelCollection:
             process_model.distribution = dist
 
     def save(self, path: str):
-        """Save the ModelCollection to disk. The ModelCollection can be reloaded using pickle.load(path)
+        """Save the ModelCollection to disk. The ModelCollection can be reloaded using ensembles.utils.load_model_collection(path_to_file)
 
         Args:
             path (str): The path to save the ModelCollection to

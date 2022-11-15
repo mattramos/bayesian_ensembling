@@ -31,7 +31,7 @@ def load_model_collection(self, path: str):
 
 class PerfectModelTest:
     """Performs a perfect model test on the ensemble of models. This 
-    is where a model is removed from the ensemble and used as 'psudo observations' 
+    is where a model is removed from the ensemble and used as 'pseudo observations' 
     to test the ensembling framework. This way we can test the projective capabilities.
     """
     # Probably only works in 1D currently
@@ -79,8 +79,6 @@ class PerfectModelTest:
         if not os.path.exists(self.save_csv_dir):
             os.makedirs(self.save_csv_dir)
         
-
-
 
     def _run_single_test(
             self,
@@ -217,7 +215,7 @@ class PerfectModelTest:
                 rmse_mmm,
                 w2_mmm
             ]
-            # print(f'With {pseudo_observations_past.model_name} as pseudo obs: NLL: {nll}, RMSE: {rmse}, W2: {w2}')
+            
             if self.include_sim:
                 file_name = f'prefect_model_test_results_{self.weight_method().name}_plus_sim_{self.ssp}.csv'
             else:

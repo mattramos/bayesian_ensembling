@@ -18,80 +18,84 @@ def data():
     return X, Xtest, y
 
 
-def test_GPR(data):
-    X, Xtest, y = data
-    n = Xtest.shape[0]
-    d = y.shape[1]
-    k = gpflow.kernels.RBF()
-    m = ensembles.ConjugateGP(kernel=k)
-    params = ensembles.config.GPRParameters().to_dict()
-    m.fit(X, y, params)
-    assert isinstance(m.model, gpflow.models.GPR)
+# Ignoring for the time being until JAX SHGP updates are merged.
+# Will test for both the DTW and SHGP models + mean field approx
+# and the normalisation pipeline.
 
-    mu, sigma = m.predict(Xtest, params)
-    for mat in [mu, sigma]:
-        assert isinstance(mat, tf.Tensor)
-        assert mat.numpy().shape == (n, d)
+# def test_GPR(data):
+#     X, Xtest, y = data
+#     n = Xtest.shape[0]
+#     d = y.shape[1]
+#     k = gpflow.kernels.RBF()
+#     m = ensembles.ConjugateGP(kernel=k)
+#     params = ensembles.config.GPRParameters().to_dict()
+#     m.fit(X, y, params)
+#     assert isinstance(m.model, gpflow.models.GPR)
 
-
-def test_SGPR(data):
-    X, Xtest, y = data
-    n = Xtest.shape[0]
-    d = y.shape[1]
-    k = gpflow.kernels.RBF()
-    m = ensembles.SparseGP(kernel=k)
-    params = ensembles.config.SGPRParameters().to_dict()
-    params["n_inducing"] = 5
-    params["optim_nits"] = 10
-    m.fit(X, y, params)
-    assert isinstance(m.model, gpflow.models.SGPR)
-    assert isinstance(
-        m.model.inducing_variable, gpflow.inducing_variables.InducingPoints
-    )
-
-    mu, sigma = m.predict(Xtest, params)
-    for mat in [mu, sigma]:
-        assert isinstance(mat, tf.Tensor)
-        assert mat.numpy().shape == (n, d)
+#     mu, sigma = m.predict(Xtest, params)
+#     for mat in [mu, sigma]:
+#         assert isinstance(mat, tf.Tensor)
+#         assert mat.numpy().shape == (n, d)
 
 
-@pytest.mark.parametrize("n_samples", [1, 2, 10])
-@pytest.mark.parametrize("d", [1, 2, 10])
-def test_joint_reconstruction(d, n_samples):
-    mu = np.cos(np.linspace(0, np.pi, num=d))
-    x_idx = np.linspace(-3.0, 3.0, num=d).reshape(-1, 1)
-    Sigma = gpflow.kernels.Matern32(lengthscales=0.5).K(x_idx)
-    L = np.linalg.cholesky(Sigma)
-    mvn = tfp.distributions.MultivariateNormalTriL(loc=mu, scale_tril=L)
-    marginals = [
-        tfp.distributions.Normal(loc=m, scale=s)
-        for m, s in zip(mu, np.diag(Sigma))
-    ]
+# def test_SGPR(data):
+#     X, Xtest, y = data
+#     n = Xtest.shape[0]
+#     d = y.shape[1]
+#     k = gpflow.kernels.RBF()
+#     m = ensembles.SparseGP(kernel=k)
+#     params = ensembles.config.SGPRParameters().to_dict()
+#     params["n_inducing"] = 5
+#     params["optim_nits"] = 10
+#     m.fit(X, y, params)
+#     assert isinstance(m.model, gpflow.models.SGPR)
+#     assert isinstance(
+#         m.model.inducing_variable, gpflow.inducing_variables.InducingPoints
+#     )
 
-    model = ensembles.JointReconstruction(mu, np.diag(Sigma))
+#     mu, sigma = m.predict(Xtest, params)
+#     for mat in [mu, sigma]:
+#         assert isinstance(mat, tf.Tensor)
+#         assert mat.numpy().shape == (n, d)
 
-    # Check model initialising is being done correctly
-    assert isinstance(model.mu, tfp.util.TransformedVariable)
-    assert isinstance(model.sigma_hat, tfp.util.TransformedVariable)
 
-    # Check fit
-    params = ensembles.config.ReconstructionParameters().to_dict()
-    params["optim_nits"] = 50
+# @pytest.mark.parametrize("n_samples", [1, 2, 10])
+# @pytest.mark.parametrize("d", [1, 2, 10])
+# def test_joint_reconstruction(d, n_samples):
+#     mu = np.cos(np.linspace(0, np.pi, num=d))
+#     x_idx = np.linspace(-3.0, 3.0, num=d).reshape(-1, 1)
+#     Sigma = gpflow.kernels.Matern32(lengthscales=0.5).K(x_idx)
+#     L = np.linalg.cholesky(Sigma)
+#     mvn = tfp.distributions.MultivariateNormalTriL(loc=mu, scale_tril=L)
+#     marginals = [
+#         tfp.distributions.Normal(loc=m, scale=s)
+#         for m, s in zip(mu, np.diag(Sigma))
+#     ]
 
-    y_sample = mvn.sample(n_samples)
-    model.fit(y_sample, params)
+#     model = ensembles.JointReconstruction(mu, np.diag(Sigma))
 
-    # Check returned params
-    learned_mu, learned_sigma = model.return_parameters()
-    assert isinstance(learned_mu, tf.Tensor)
-    assert isinstance(learned_sigma, tf.Tensor)
+#     # Check model initialising is being done correctly
+#     assert isinstance(model.mu, tfp.util.TransformedVariable)
+#     assert isinstance(model.sigma_hat, tfp.util.TransformedVariable)
 
-    learned_dist = model.return_joint_distribution()
-    assert isinstance(learned_dist, tfp.distributions.MultivariateNormalTriL)
+#     # Check fit
+#     params = ensembles.config.ReconstructionParameters().to_dict()
+#     params["optim_nits"] = 50
 
-    # Check objective logging is being done correctly
-    assert len(model.objective_evals) == params["optim_nits"]
-    # Check logged values are of float type
-    assert all([isinstance(i, float) for i in model.objective_evals])
-    # Check the objective is being minimised.
-    assert model.objective_evals[-1] < model.objective_evals[0]
+#     y_sample = mvn.sample(n_samples)
+#     model.fit(y_sample, params)
+
+#     # Check returned params
+#     learned_mu, learned_sigma = model.return_parameters()
+#     assert isinstance(learned_mu, tf.Tensor)
+#     assert isinstance(learned_sigma, tf.Tensor)
+
+#     learned_dist = model.return_joint_distribution()
+#     assert isinstance(learned_dist, tfp.distributions.MultivariateNormalTriL)
+
+#     # Check objective logging is being done correctly
+#     assert len(model.objective_evals) == params["optim_nits"]
+#     # Check logged values are of float type
+#     assert all([isinstance(i, float) for i in model.objective_evals])
+#     # Check the objective is being minimised.
+#     assert model.objective_evals[-1] < model.objective_evals[0]

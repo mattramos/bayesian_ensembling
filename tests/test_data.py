@@ -55,17 +55,6 @@ def test_process_model(n_dims):
     assert model.max_val.size == 1
     assert model.min_val.size == 1
 
-    # Check standardisation
-    standardised_model = model.standardise_data()
-    assert standardised_model.model_mean == pytest.approx(0, 1e-6)
-    assert standardised_model.model_std == pytest.approx(1, 1e-6)
-    assert isinstance(standardised_model, ProcessModel)
-
-    # Check unstandardisation
-    unstandardised_model = standardised_model.unstandardise_data()
-    assert np.all(model.model_data == pytest.approx(unstandardised_model.model_data, 1e-6))
-    assert isinstance(unstandardised_model, ProcessModel)
-
     # Check for climatology calculation for dates and given climatology
     model_anomaly = model.calculate_anomaly()
     climatology = model_anomaly.climatology
