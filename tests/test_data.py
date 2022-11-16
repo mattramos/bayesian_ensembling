@@ -1,57 +1,24 @@
-from pydoc import cli
 import numpy as np
 import xarray as xr
 import pytest
-import ensembles
 from ensembles.data import ModelCollection, ProcessModel
+from ensembles.load_data import create_synthetic_data
 import pandas as pd
 import pytest
-
-def create_xarray_dataarray(n_dims):
-    realisation = np.arange(3)
-    time = pd.date_range('1960-01-01', periods=480, freq='M')
-    lat = np.arange(5)
-    lon = np.arange(4)
-
-    ds = xr.Dataset(
-        data_vars=dict(
-            val=(
-                ['realisation', 'time', 'lon', 'lat'],
-                np.random.rand(
-                    len(realisation),
-                    len(time),
-                    len(lon),
-                    len(lat)
-                )
-            )
-        ),
-        coords=dict(
-            realisation=(['realisation'], realisation),
-            time=(['time'], time),
-            lon=(['lon'], lon),
-            lat=(['lat'], lat),
-        )
-    )
-
-    if n_dims == 1:
-        return ds.val.isel(lat=0, lon=0).drop_vars(['lat', 'lon'])
-    elif n_dims == 2:
-        return ds.val.isel(lat=0,).drop_vars(['lat'])
-    elif n_dims == 3:
-        return ds.val
+import cf_xarray as cfxr
 
 @pytest.mark.parametrize('n_dims', [1,2,3])
 def test_process_model(n_dims):
     # Check initialisation
-    data_array = create_xarray_dataarray(n_dims)
+    data_array = create_synthetic_data(n_dims)
     model = ProcessModel(data_array, 'model_name')
 
     # Check dimensions are correct
     assert model.model_data.ndim == n_dims + 1
 
     # Check mean, std, max_val and min_val output size
-    assert model.model_mean.size == 1
-    assert model.model_std.size == 1
+    assert np.all(model.mean_across_realisations.values == model.model_data.mean(dim='realisation').values)
+    assert np.all(model.std_across_realisations.values == model.model_data.std(dim='realisation').values)
     assert model.max_val.size == 1
     assert model.min_val.size == 1
 
@@ -76,7 +43,7 @@ def test_process_model(n_dims):
 def test_model_collection(n_dims, n_models):
     models = []
     for i in range(n_models):
-        data_array = create_xarray_dataarray(n_dims)
+        data_array = create_synthetic_data(n_dims)
         model = ProcessModel(data_array, 'model_name')
         models.append(model)
     model_collection = ModelCollection(models)
@@ -97,6 +64,15 @@ def test_model_collection(n_dims, n_models):
     # Check plotting
     model_collection.plot_all()
     model_collection.plot_grid()
-    
+
+@pytest.mark.parametrize('lat_name', ['lat', 'latitude', 'Latitude'])
+@pytest.mark.parametrize('lon_name', ['lon', 'longitude', 'Longitude'])
+def test_cf_xarray(lat_name, lon_name):
+    n_dims = 3
+    da = create_synthetic_data(n_dims)
+
+    # Check that lat and lon coordinates are in da (using cf_xarray)
+    assert isinstance(da.cf.mean(lat_name), xr.DataArray)
+    assert isinstance(da.cf.mean(lon_name), xr.DataArray)
 
 

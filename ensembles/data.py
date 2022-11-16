@@ -144,32 +144,27 @@ class Distribution:
 
 
 @dataclass
-class ProcessModel:
-    """Data class for handing the simulation output for a single process model.
+class AbstractData:
+    """Abstract data class for handling the data of models and observations.
+    The class stores the data in xarray DataArrays and handles them such that we can retain coordinate information.
 
     Args:
-        model_data (xr.DataArray): The input model data. Realisation must be the first dimension and time must be the second.
-        model_name (str): The model name. It should be unique to the model.
+        data (xr.DataArray): The data to be stored
 
     Returns:
-        ProcessModel: A data class for handling all the data for a singel process model.
-    """
-
-    model_data: xr.DataArray
-    model_name: str
-    idx: int = 0
-    _distribution = None
+        AbstractData: The data class for the data
+    """    
+    data: xr.DataArray
 
     def __post_init__(self):
-        self.model_mean = self.model_data.mean()
-        self.model_std = self.model_data.std()
         self.climatology = None
-        assert isinstance(self.model_data, xr.DataArray), "Input must be xr.DataArray"
-        assert self.model_data.dims[0] == "realisation"
+        self.idx = 0
+        self._distribution = None
 
-        assert np.any(~np.isnan(self.model_data)), "Input data must not contain NaN"
-        # TODO: Do some check that time and real are in the data
-        # We want a specific order of coords (real, time, space) and we want specific names
+        assert isinstance(self.data, xr.DataArray), "Input must be xr.DataArray"
+        # TODO make this cf compliant using cf_xarray
+        assert self.data.dims[0] == "realisation", "First dimension must be 'realisation'"
+        assert np.any(~np.isnan(self.data)), "Input data must not contain NaN"
 
     @property
     def max_val(self) -> int:
@@ -178,7 +173,7 @@ class ProcessModel:
         Returns:
             int: The maximum value
         """
-        return self.model_data.max()
+        return self.data.max()
 
     @property
     def min_val(self) -> int:
@@ -187,20 +182,7 @@ class ProcessModel:
         Returns:
             int: The minimum value
         """
-        return self.model_data.min()
-
-    @property
-    def n_observations(self) -> int:
-        """Returns the number of observation data points
-
-        Raises:
-            NotImplementedError: Currently not used as unsure of use in 3D case
-
-        Returns:
-            int: Number of observations
-        """
-        raise NotImplementedError
-        return self.model_data.shape[0]
+        return self.data.min()
 
     @property
     def n_realisations(self) -> int:
@@ -209,7 +191,7 @@ class ProcessModel:
         Returns:
             int: Number of realisations
         """
-        return self.model_data.realisation.size
+        return self.data.realisation.size
 
     @property
     def time(self) -> xr.DataArray:
@@ -219,8 +201,80 @@ class ProcessModel:
         Returns:
             xr.DataArray: A data array object of the time dimension
         """
-        time = self.model_data.time
+        time = self.data.time
         return time
+
+    def plot(self, **kwargs) -> tp.Any:
+        """Plot the model data including mean and individual realisations.
+        If there are spatial dimensions, these are collapsed to a spatial mean for plotting.
+
+        Returns:
+            plt.ax: Current axis of the plot
+        """
+        fig, ax = plt.subplots()
+        x = self.data.time
+        if self.data.ndim > 2:
+            warnings.warn("Collapsing (mean) non-time dimensions for plotting")
+            coord_names = [coord for coord in self.data.coords]
+            coord_names.remove("time")
+            coord_names.remove("realisation")
+            da = self.data.mean(coord_names)
+        else:
+            da = self.data
+        ax.set_prop_cycle(get_style_cycler())
+        for real in da.realisation:
+            ax.plot(
+                x,
+                da.sel(realisation=real),
+                alpha=0.1,
+                color="gray",
+                label="Realisations",
+                ls="-",
+            )
+        ax.plot(x, da.mean("realisation"), label="Model mean", alpha=0.7)
+        ax.legend(loc="best")
+        ax = _unique_legend(ax)
+        return ax
+
+    @property
+    def mean_across_realisations(self):
+        """Calculate the model mean across the realisation axis
+
+        Returns:
+            xr.DataArray: The model averaged over realisations
+        """
+        return self.data.mean("realisation")
+
+    @property
+    def std_across_realisations(self):
+        """Calculate the model standard deviation across the realisation axis
+
+        Returns:
+            xr.DataArray: The model standard deviation
+        """
+        return self.data.std("realisation")
+
+    @property
+    def ndim(self):
+        """The number of dimensions described by the model e.g. (realisation, time, lat) = 3 dimensions
+
+        Returns:
+            int: The number of dimensions.
+        """
+        return self.data.ndim
+
+    # Question of whether we want this as abstract or attached to ProcessModel only
+    @property
+    def distribution(self) -> Distribution:
+        """Returns the model posterior
+
+        Raises:
+            NotImplementedError: Not currently implemented for > 2 dimensions (i.e. realisation and time)
+
+        Returns:
+            distrax.Distribution: The model posterior
+        """
+        return self._distribution
 
     def calculate_anomaly(
         self,
@@ -239,7 +293,7 @@ class ProcessModel:
             ProcessModel: The anomalised model data
         """
         # If a climatology is not specified, it calculates one and returns it
-        da = self.model_data.copy(deep=True)
+        da = self.data.copy(deep=True)
         if np.any(climatology) == False:
             t0 = climatology_dates[0]
             t1 = climatology_dates[1]
@@ -260,78 +314,6 @@ class ProcessModel:
 
         return anomaly_model
 
-    def plot(self, **kwargs) -> tp.Any:
-        """Plot the model data including mean and individual realisations.
-        If there are spatial dimensions, these are collapsed to a spatial mean for plotting.
-
-        Returns:
-            plt.ax: Current axis of the plot
-        """
-        fig, ax = plt.subplots(figsize=(12, 7))
-        x = self.model_data.time
-        if self.model_data.ndim > 2:
-            warnings.warn("Collapsing (mean) non-time dimensions for plotting")
-            coord_names = [coord for coord in self.model_data.coords]
-            coord_names.remove("time")
-            coord_names.remove("realisation")
-            da = self.model_data.mean(coord_names)
-        else:
-            da = self.model_data
-        ax.set_prop_cycle(get_style_cycler())
-        for real in da.realisation:
-            ax.plot(
-                x,
-                da.sel(realisation=real),
-                alpha=0.1,
-                color="gray",
-                label="Realisations",
-                ls="-",
-            )
-        ax.plot(x, da.mean("realisation"), label="Model mean", alpha=0.7)
-        ax.legend(loc="best")
-        ax = _unique_legend(ax)
-        ax.set_title(self.model_name)
-        return ax
-
-    @property
-    def mean_across_realisations(self):
-        """Calculate the model mean across the realisation axis
-
-        Returns:
-            xr.DataArray: The model averaged over realisations
-        """
-        return self.model_data.mean("realisation")
-
-    @property
-    def std_across_realisations(self):
-        """Calculate the model standard deviation across the realisation axis
-
-        Returns:
-            xr.DataArray: The model standard deviation
-        """
-        return self.model_data.std("realisation")
-
-    @property
-    def ndim(self):
-        """The number of dimensions described by the model e.g. (realisation, time, lat) = 3 dimensions
-
-        Returns:
-            int: The number of dimensions.
-        """
-        return self.model_data.ndim
-
-    @property
-    def distribution(self) -> Distribution:
-        """Returns the model posterior
-
-        Raises:
-            NotImplementedError: Not currenlty implemented for > 2 dimensions (i.e. realisation and time)
-
-        Returns:
-            distrax.Distribution: The model posterior
-        """
-        return self._distribution
-
     @distribution.setter
     def distribution(self, dist: Distribution):
         self._distribution = dist
@@ -344,12 +326,60 @@ class ProcessModel:
 
     def __next__(self):
         try:
-            out = self.model_data.isel(realisation=self.idx)
+            out = self.data.isel(realisation=self.idx)
             self.idx += 1
         except IndexError:
             self.idx = 0
             raise StopIteration  # Done iterating.
         return out
+
+@dataclass
+class ProcessModel(AbstractData):
+    """Data class for handing the simulation output for a single process model.
+
+    Args:
+        model_name (str): The model name. It should be unique to the model.
+
+    Returns:
+        ProcessModel: A data class for handling all the data for a single process model.
+    """
+
+    model_name: str
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.model_data = self.data
+
+    def __repr__(self) -> str:
+        return (
+            f"ProcessModel\n- Name: {self.model_name}\n- Number of realisations: {self.n_realisations}\n- Data size: {self.data.size}"
+        )
+
+
+@dataclass
+class Observation(AbstractData):
+    """Data class for handling observational data."""
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.obs_data = self.data
+
+    def __repr__(self) -> str:
+        return (
+            f"Observation\n- Number of realisations: {self.n_realisations}\n- Data size: {self.data.size}"
+        )
+
+    @property
+    def n_observations(self) -> int:
+        """Returns the number of observation data points
+
+        Raises:
+            NotImplementedError: Currently not used as unsure of use in 3D case
+
+        Returns:
+            int: Number of observations
+        """
+        return self.data.shape[0]
 
 
 @dataclass
@@ -367,8 +397,14 @@ class ModelCollection:
     models: tp.List[ProcessModel]
     idx: int = 0
 
+
     def __post_init__(self):
         self.check_time_axes()
+
+    def __repr__(self) -> str:
+        return (
+            f"ModelCollection\n- Number of models: {len(self.models)}\n- Number of realisations: {np.sum([model.n_realisations for model in self.models])}\n- Data size per model: {self.models[0].data.size}"
+        )
 
     def __iter__(self):
         return self
@@ -468,7 +504,7 @@ class ModelCollection:
     def plot_all(
         self,
         ax: tp.Optional[tp.Any] = None,
-        legend: bool = False,
+        legend: bool = True,
         one_color: str = None,
         **kwargs
     ) -> tp.Any:
@@ -483,12 +519,14 @@ class ModelCollection:
             plt.ax: A matplotlib axis
         """
         if not ax:
-            fig, ax = plt.subplots(figsize=(15, 7))
+            fig, ax = plt.subplots()
+
+        if self.models[0].ndim > 2:
+            warnings.warn("Collapsing (mean) non-time dimensions for plotting")
 
         ax.set_prop_cycle(get_style_cycler())
         for model in self:
             if model.ndim > 2:
-                warnings.warn("Collapsing (mean) non-time dimensions for plotting")
                 coord_names = [coord for coord in model.model_data.coords]
                 coord_names.remove("time")
                 da = model.model_data.mean(coord_names)
@@ -513,10 +551,13 @@ class ModelCollection:
             ncols=3,
             sharey=True,
         )
+        
+        if self.models[0].ndim > 2:
+            warnings.warn("Collapsing (mean) non-time dimensions for plotting")
+
         for model, ax, args in zip(self, axes.ravel(), style_cycler):
             x = model.time
             if model.model_data.ndim > 2:
-                warnings.warn("Collapsing (mean) non-time dimensions for plotting")
                 coord_names = [coord for coord in model.model_data.coords]
                 coord_names.remove("time")
                 model_mean = model.model_data.mean(coord_names)

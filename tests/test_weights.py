@@ -5,68 +5,10 @@ import pytest
 import ensembles as es
 from ensembles.data import ModelCollection, ProcessModel
 from ensembles.weights import *
+from ensembles.load_data import create_synthetic_data, create_synthetic_models_and_obs
 import pandas as pd
 import pytest
 import jax.numpy as jnp
-
-def create_xarray_dataarray(n_dims, n_reals=3):
-    """Create a xarray DataArray for testing with n_dims dimensions and n_reals realisations.
-    This is a helper function for creating test data."""
-    realisation = np.arange(n_reals)
-    time = pd.date_range('1960-01-01', periods=24, freq='M')
-    lat = np.arange(5)
-    lon = np.arange(4)
-
-    ds = xr.Dataset(
-        data_vars=dict(
-            val=(
-                ['realisation', 'time', 'lon', 'lat'],
-                np.random.rand(
-                    len(realisation),
-                    len(time),
-                    len(lon),
-                    len(lat)
-                )
-            )
-        ),
-        coords=dict(
-            realisation=(['realisation'], realisation),
-            time=(['time'], time),
-            lon=(['lon'], lon),
-            lat=(['lat'], lat),
-        )
-    )
-
-    if n_dims == 1:
-        return ds.val.isel(lat=0, lon=0).drop_vars(['lat', 'lon'])
-    elif n_dims == 2:
-        return ds.val.isel(lat=0,).drop_vars(['lat'])
-    elif n_dims == 3:
-        return ds.val
-
-def create_synthetic_models_and_obs(n_models=3, obs_n_reals=3, model_n_dims=3):
-    """Create synthetic models and observations for testing.
-
-    Args:
-        n_models (int, optional): Number of models (process). Defaults to 3.
-        obs_n_reals (int, optional): Number of observational realisations. Defaults to 3.
-        model_n_dims (int, optional): Number of model dimensions (time, lat, lon). Defaults to 3.
-
-    Returns:
-        ModelCollection, ProcessModel: the model collection and the observations
-    """
-
-    models = []
-    for i in range(n_models):
-        model_data_array = create_xarray_dataarray(n_dims=model_n_dims)
-        model = ProcessModel(model_data_array, f'model{i}')
-        models.append(model)
-    model_collection = ModelCollection(models)
-
-    obs_data_array = create_xarray_dataarray(n_dims=model_n_dims, n_reals=obs_n_reals)
-    observations = ProcessModel(obs_data_array, 'obs')
-
-    return model_collection, observations
     
 @pytest.mark.parametrize('model_n_dims', [1]) # Only test 1D for now
 @pytest.mark.parametrize('obs_n_reals', [1,2,5,10])
